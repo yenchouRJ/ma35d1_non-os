@@ -82,3 +82,4 @@ Samplecode/*/packages/
 
 # for vscode
 !SampleCode/lwIP/lwIP_SSL_Server/CMakeLists.txt
+!SampleCode/lwIP/lwIP_SSL_Client/CMakeLists.txt
