@@ -79,7 +79,3 @@ Samplecode/*/packages/
 !SampleCode/OpenAMP/Share_Memory_SDRAM/share_memory_sdram.bin
 !SampleCode/OpenAMP/Share_Memory_SRAM/share_memory_demo.bin
 !SampleCode/StdDriver/SYS_LowPowerMode/pd1.bin
-
-# for vscode
-!SampleCode/lwIP/lwIP_SSL_Server/CMakeLists.txt
-!SampleCode/lwIP/lwIP_SSL_Client/CMakeLists.txt
