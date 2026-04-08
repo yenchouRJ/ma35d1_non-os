@@ -29,7 +29,7 @@
 
 	/* Variables and functions. */
 	.extern ullMaxAPIPriorityMask
-	.extern pxCurrentTCB
+	.extern pxCurrentTCBs
 	.extern vTaskSwitchContext
 	.extern vApplicationIRQHandler
 	.extern ullPortInterruptNesting
@@ -43,6 +43,15 @@
 	.global FreeRTOS_IRQ_Handler
 	.global FreeRTOS_SWI_Handler
 	.global vPortRestoreTaskContext
+
+/*
+ * Macro to get the current core ID into a register.
+ * Result: Xdst = 0 or 1 (for dual-core A35)
+ */
+.macro portGET_CORE_ID Xdst
+	MRS		\Xdst, MPIDR_EL1
+	AND		\Xdst, \Xdst, #0x3
+.endm
 
 
 .macro portSAVE_CONTEXT
@@ -80,13 +89,16 @@
 
 	STP 	X2, X3, [SP, #-0x10]!
 
+	/* Get core ID for indexing per-core arrays. */
+	portGET_CORE_ID X4
+
 	/* Save the critical section nesting depth. */
 	LDR		X0, ullCriticalNestingConst
-	LDR		X3, [X0]
+	LDR		X3, [X0, X4, LSL #3]		/* ullCriticalNesting[coreID] */
 
 	/* Save the FPU context indicator. */
 	LDR		X0, ullPortTaskHasFPUContextConst
-	LDR		X2, [X0]
+	LDR		X2, [X0, X4, LSL #3]		/* ullPortTaskHasFPUContext[coreID] */
 
 	/* Save the FPU context, if any (32 128-bit registers). */
 	CMP		X2, #0
@@ -112,8 +124,9 @@
 	/* Store the critical nesting count and FPU context indicator. */
 	STP 	X2, X3, [SP, #-0x10]!
 
-	LDR 	X0, pxCurrentTCBConst
-	LDR 	X1, [X0]
+	/* Save SP into pxCurrentTCBs[coreID]->pxTopOfStack */
+	LDR 	X0, pxCurrentTCBsConst
+	LDR 	X1, [X0, X4, LSL #3]		/* pxCurrentTCBs[coreID] */
 	MOV 	X0, SP   /* Move SP into X0 for saving. */
 	STR 	X0, [X1]
 
@@ -129,9 +142,12 @@
 	/* Switch to use the EL0 stack pointer. */
 	MSR 	SPSEL, #0
 
+	/* Get core ID for indexing per-core arrays. */
+	portGET_CORE_ID X4
+
 	/* Set the SP to point to the stack of the task being restored. */
-	LDR		X0, pxCurrentTCBConst
-	LDR		X1, [X0]
+	LDR		X0, pxCurrentTCBsConst
+	LDR		X1, [X0, X4, LSL #3]		/* pxCurrentTCBs[coreID] */
 	LDR		X0, [X1]
 	MOV		SP, X0
 
@@ -139,23 +155,23 @@
 
 	/* Set the PMR register to be correct for the current critical nesting
 	depth. */
-	LDR		X0, ullCriticalNestingConst /* X0 holds the address of ullCriticalNesting. */
+	LDR		X0, ullCriticalNestingConst	/* X0 holds the address of ullCriticalNesting array. */
 	MOV		X1, #255					/* X1 holds the unmask value. */
-	LDR		X4, ullICCPMRConst			/* X4 holds the address of the ICCPMR constant. */
+	LDR		X5, ullICCPMRConst			/* X5 holds the address of the ICCPMR constant. */
 	CMP		X3, #0
-	LDR		X5, [X4] 					/* X5 holds the address of the ICCPMR register. */
+	LDR		X6, [X5] 					/* X6 holds the address of the ICCPMR register. */
 	B.EQ	1f
-	LDR		X6, ullMaxAPIPriorityMaskConst
-	LDR		X1, [X6]					/* X1 holds the mask value. */
+	LDR		X7, ullMaxAPIPriorityMaskConst
+	LDR		X1, [X7]					/* X1 holds the mask value. */
 1:
-	STR		W1, [X5]					/* Write the mask value to ICCPMR. */
+	STR		W1, [X6]					/* Write the mask value to ICCPMR. */
 	DSB 	SY							/* _RB_Barriers probably not required here. */
 	ISB 	SY
-	STR		X3, [X0]					/* Restore the task's critical nesting count. */
+	STR		X3, [X0, X4, LSL #3]		/* Restore the task's critical nesting count (per-core). */
 
 	/* Restore the FPU context indicator. */
 	LDR		X0, ullPortTaskHasFPUContextConst
-	STR		X2, [X0]
+	STR		X2, [X0, X4, LSL #3]		/* per-core */
 
 	/* Restore the FPU context, if any. */
 	CMP		X2, #0
@@ -238,6 +254,9 @@ FreeRTOS_SWI_Handler:
 	CMP		X1, #0x17 	/* 0x17 = SMC instruction. */
 #endif
 	B.NE	FreeRTOS_Abort
+
+	/* Pass core ID as argument to vTaskSwitchContext(xCoreID) */
+	portGET_CORE_ID X0
 	BL 		vTaskSwitchContext
 
 	portRESTORE_CONTEXT
@@ -297,11 +316,14 @@ FreeRTOS_IRQ_Handler:
 #endif
 	STP 	X2, X3, [SP, #-0x10]!
 
+	/* Get core ID for per-core array access. */
+	portGET_CORE_ID X19			/* X19 = coreID (callee-saved) */
+
 	/* Increment the interrupt nesting counter. */
 	LDR		X5, ullPortInterruptNestingConst
-	LDR		X1, [X5]	/* Old nesting count in X1. */
+	LDR		X1, [X5, X19, LSL #3]	/* Old nesting count in X1. */
 	ADD		X6, X1, #1
-	STR		X6, [X5]	/* Address of nesting count variable in X5. */
+	STR		X6, [X5, X19, LSL #3]	/* Store new nesting count. */
 
 	/* Maintain the interrupt nesting information across the function call. */
 	STP		X1, X5, [SP, #-0x10]!
@@ -333,7 +355,7 @@ FreeRTOS_IRQ_Handler:
 
 	/* Restore the critical nesting count. */
 	LDP		X1, X5, [SP], #0x10
-	STR		X1, [X5]
+	STR		X1, [X5, X19, LSL #3]	/* Restore per-core nesting count. */
 
 	/* Has interrupt nesting unwound? */
 	CMP		X1, #0
@@ -341,13 +363,13 @@ FreeRTOS_IRQ_Handler:
 
 	/* Is a context switch required? */
 	LDR		X0, ullPortYieldRequiredConst
-	LDR		X1, [X0]
+	LDR		X1, [X0, X19, LSL #3]	/* ullPortYieldRequired[coreID] */
 	CMP		X1, #0
 	B.EQ	Exit_IRQ_No_Context_Switch
 
-	/* Reset ullPortYieldRequired to 0. */
+	/* Reset ullPortYieldRequired[coreID] to 0. */
 	MOV		X2, #0
-	STR		X2, [X0]
+	STR		X2, [X0, X19, LSL #3]
 
 	/* Restore volatile registers. */
 	LDP 	X4, X5, [SP], #0x10  /* SPSR and ELR. */
@@ -375,6 +397,8 @@ FreeRTOS_IRQ_Handler:
 
 	/* Save the context of the current task and select a new task to run. */
 	portSAVE_CONTEXT
+	/* Pass core ID as argument to vTaskSwitchContext(xCoreID) */
+	portGET_CORE_ID X0
 	BL vTaskSwitchContext
 	portRESTORE_CONTEXT
 
@@ -409,7 +433,7 @@ Exit_IRQ_No_Context_Switch:
 
 
 .align 8
-pxCurrentTCBConst: .dword pxCurrentTCB
+pxCurrentTCBsConst: .dword pxCurrentTCBs
 ullCriticalNestingConst: .dword ullCriticalNesting
 ullPortTaskHasFPUContextConst: .dword ullPortTaskHasFPUContext
 
@@ -424,8 +448,3 @@ ullICCEOIRConst: .dword ullICCEOIR
 
 
 .end
-
-
-
-
-

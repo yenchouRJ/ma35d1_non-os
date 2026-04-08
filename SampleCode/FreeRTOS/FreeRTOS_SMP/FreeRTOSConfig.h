@@ -68,8 +68,37 @@ extern uint32_t SystemCoreClock;
 
 #define configMAX_API_CALL_INTERRUPT_PRIORITY	18
 
+/*-----------------------------------------------------------
+ * SMP Configuration.
+ *----------------------------------------------------------*/
+
+/* Number of cores available to FreeRTOS-SMP.  The MA35D1 has two
+ * Cortex-A35 cores.  Setting this to 2 enables the SMP scheduler
+ * which creates per-core idle tasks and uses pxCurrentTCBs[]. */
+#define configNUM_CORES                         2
+
+/* Allow tasks of different priorities to run simultaneously on
+ * different cores.  Without this, only the N highest-priority
+ * ready tasks would run, even if a core is idle. */
+#define configRUN_MULTIPLE_PRIORITIES            1
+
+/* Enable the core-affinity API (vTaskCoreAffinitySet / Get).
+ * This allows pinning tasks to specific cores when needed. */
+#define configUSE_CORE_AFFINITY                  1
+
+/* Do not allow individual tasks to disable their own preemption. */
+#define configUSE_TASK_PREEMPTION_DISABLE        0
+
+/*-----------------------------------------------------------
+ * General Configuration.
+ *----------------------------------------------------------*/
+
 #define configCPU_CLOCK_HZ              ( SystemCoreClock )
-#define configUSE_PORT_OPTIMISED_TASK_SELECTION	1
+
+/* Port-optimised task selection uses CLZ-based ready bitmap which
+ * is not compatible with the SMP scheduler.  Must be 0 for SMP. */
+#define configUSE_PORT_OPTIMISED_TASK_SELECTION	0
+
 #define configUSE_TICKLESS_IDLE					0
 #define configTICK_RATE_HZ              ( ( TickType_t ) 1000 )
 #define configUSE_PREEMPTION            1
@@ -77,7 +106,7 @@ extern uint32_t SystemCoreClock;
 #define configUSE_TICK_HOOK             1
 #define configMAX_PRIORITIES            ( 8 )
 #define configMINIMAL_STACK_SIZE        ( ( unsigned short ) 200)
-#define configTOTAL_HEAP_SIZE           ( ( size_t ) ( 128 * 1024 ) )
+#define configTOTAL_HEAP_SIZE           ( ( size_t ) ( 256 * 1024 ) )
 #define configMAX_TASK_NAME_LEN         ( 16 )
 
 #define configUSE_TRACE_FACILITY        1
@@ -173,6 +202,9 @@ void vConfigureTickInterrupt( void );
 
 void vClearTickInterrupt( void );
 #define configCLEAR_TICK_INTERRUPT() vClearTickInterrupt()
+
+/* Secondary core tick setup (called from main1). */
+void vConfigureTickInterruptCore1( void );
 
 /* The following constant describe the hardware, and are correct for the
 Nuvoton MA35D1 MPU. */

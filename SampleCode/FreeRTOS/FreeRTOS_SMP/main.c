@@ -1,9 +1,11 @@
 /**************************************************************************//**
  * @file     main.c
  *
- * @brief    A FreeRTOS project with two demo applications.
+ * @brief    FreeRTOS-SMP project for dual-core MA35D1 (Cortex-A35).
+ *           Core 0 starts the scheduler; core 1 enters via main1().
  *
- * @note     TIMER11 has been assigned to FreeRTOS kernel.
+ * @note     The ARMv8 Generic Timer (CNTP, PPI 30) is used for the tick.
+ *           SGI0 is used for inter-core yield signalling.
  *
  * @copyright (C) 2023 Nuvoton Technology Corp. All rights reserved.
  *****************************************************************************/
@@ -37,7 +39,7 @@
  * When mainSELECTED_APPLICATION is set to 1 the comprehensive test and demo
  * application will be run.
  */
-#define mainSELECTED_APPLICATION	1
+#define mainSELECTED_APPLICATION	0
 
 /*
  * See the comments at the top of this file and above the
@@ -51,12 +53,127 @@ extern void main_full( void );
 #error Invalid mainSELECTED_APPLICATION setting.  See the comments at the top of this file and above the mainSELECTED_APPLICATION definition.
 #endif
 
-/* Prototypes for the standard FreeRTOS callback/hook functions implemented
-within this file. */
+/*-----------------------------------------------------------*/
+/* SMP: External references needed for secondary core boot.  */
+/*-----------------------------------------------------------*/
+
+/* Per-core yield flag from the portable layer (port.c / portASM.S).
+ * Set to pdTRUE by the SGI0 handler so that FreeRTOS_IRQ_Handler
+ * triggers a context switch on IRQ exit. */
+extern uint64_t ullPortYieldRequired[];
+
+/* The per-core TCB array from the kernel (tasks.c).
+ * Core 1 waits for pxCurrentTCBs[1] != NULL before entering the
+ * scheduler, ensuring the SMP kernel has assigned a task (idle) to it. */
+extern void * volatile pxCurrentTCBs[];
+
+/* Assembly entry point: installs FreeRTOS vector table and restores
+ * the first task context for the calling core (core-aware via MPIDR). */
+extern void vPortRestoreTaskContext( void );
+
+/* Secondary core tick configuration from FreeRTOS_tick_config.c. */
+extern void vConfigureTickInterruptCore1( void );
+
+/* BSP: Boot secondary core (writes entry to CA35WRBADR1 + SEV). */
+extern void RunCore1( void );
+
+/*-----------------------------------------------------------*/
+/* Prototypes for the standard FreeRTOS callback/hook functions
+ * implemented within this file.                               */
+/*-----------------------------------------------------------*/
 void vApplicationMallocFailedHook( void );
 void vApplicationIdleHook( void );
 void vApplicationStackOverflowHook( TaskHandle_t pxTask, char *pcTaskName );
 void vApplicationTickHook( void );
+
+/*-----------------------------------------------------------*/
+/* SGI0 handler for inter-core yield.                        */
+/*-----------------------------------------------------------*/
+
+/*
+ * When the SMP kernel wants core N to yield (because a higher-priority
+ * task became ready), it calls portYIELD_CORE(N) which sends SGI0 to
+ * that core.  The SGI0 interrupt enters FreeRTOS_IRQ_Handler, which
+ * dispatches through vApplicationIRQHandler -> IRQ_GetHandler(SGI0).
+ *
+ * This handler simply sets ullPortYieldRequired[coreID] = pdTRUE so
+ * that FreeRTOS_IRQ_Handler performs a context switch on IRQ exit.
+ */
+static void prvSGI0YieldHandler( void )
+{
+	/* Determine which core is handling this SGI. */
+	uint64_t mpidr;
+	BaseType_t xCoreID;
+
+	__asm volatile ( "MRS %0, MPIDR_EL1" : "=r" ( mpidr ) ); // cpuid()
+	xCoreID = ( BaseType_t ) ( mpidr & 0x3UL );
+
+	ullPortYieldRequired[ xCoreID ] = pdTRUE;
+}
+
+/*-----------------------------------------------------------*/
+/* Secondary core (core 1) entry point.                      */
+/*-----------------------------------------------------------*/
+
+/*
+ * main1() overrides the weak default in system_MA35D1.c.
+ *
+ * Boot sequence for core 1:
+ *   startup.S: SecondaryCore -> set stack -> SystemInit1() -> main1()
+ *
+ * SystemInit1() has already:
+ *   - Set the generic timer frequency
+ *   - Initialised the MMU
+ *   - Initialised the GIC CPU interface
+ *   - Enabled interrupts
+ *
+ * What we do here:
+ *   1. Configure the per-core generic timer for tick interrupts (PPI 30)
+ *   2. Install the SGI0 yield handler on this core's GIC
+ *   3. Wait for core 0 to start the scheduler (pxCurrentTCBs[1] populated)
+ *   4. Enter the FreeRTOS scheduler via vPortRestoreTaskContext()
+ *      (which installs the FreeRTOS vector table and ERET into the
+ *       first task assigned to this core)
+ */
+void main1( void )
+{
+	/* 1. Set up the generic timer tick for core 1. */
+	vConfigureTickInterruptCore1();
+
+	/* 2. Install the SGI0 yield handler on this core.
+	 *    The GIC CPU interface was already initialised by SystemInit1().
+	 *    IRQ_SetHandler / IRQ_Enable work on the calling core's PPI/SGI. */
+	IRQ_SetHandler( (IRQn_ID_t)SGI0_IRQn, prvSGI0YieldHandler );
+	IRQ_SetPriority( (IRQn_ID_t)SGI0_IRQn,
+	                 configMAX_API_CALL_INTERRUPT_PRIORITY << portPRIORITY_SHIFT );
+	IRQ_Enable( (IRQn_ID_t)SGI0_IRQn );
+
+	/* 3. Spin until the SMP scheduler has assigned a task to this core.
+	 *    vTaskStartScheduler() on core 0 creates idle tasks for all cores
+	 *    and populates pxCurrentTCBs[] before calling vPortRestoreTaskContext().
+	 *    We must wait until pxCurrentTCBs[1] is non-NULL to avoid entering
+	 *    portRESTORE_CONTEXT with a NULL stack pointer. */
+	while( pxCurrentTCBs[ 1 ] == NULL )
+	{
+		__asm volatile ( "yield" );
+	}
+
+	/* Ensure we see all writes from core 0. */
+	__asm volatile ( "DSB SY" ::: "memory" );
+	__asm volatile ( "ISB SY" );
+
+	/* 4. Enter the scheduler.  vPortRestoreTaskContext() installs the
+	 *    FreeRTOS vector table (VBAR_EL3) and ERETs into the task
+	 *    stored in pxCurrentTCBs[1].  This function never returns. */
+	vPortRestoreTaskContext();
+
+	/* Should never reach here. */
+	for( ;; );
+}
+
+/*-----------------------------------------------------------*/
+/* Standard FreeRTOS hook functions.                         */
+/*-----------------------------------------------------------*/
 
 void vApplicationMallocFailedHook( void )
 {
@@ -115,7 +232,9 @@ void vApplicationTickHook( void )
 
 /* configUSE_STATIC_ALLOCATION is set to 1, so the application must provide an
 implementation of vApplicationGetIdleTaskMemory() to provide the memory that is
-used by the Idle task. */
+used by the Idle task.  Note: In the SMP kernel, this callback is only called
+for core 0's idle task.  Core 1's idle task uses internal static buffers
+allocated inside prvCreateIdleTasks(). */
 void vApplicationGetIdleTaskMemory( StaticTask_t **ppxIdleTaskTCBBuffer, StackType_t **ppxIdleTaskStackBuffer, uint32_t *pulIdleTaskStackSize )
 {
     /* If the buffers to be provided to the Idle task are declared inside this
@@ -207,12 +326,29 @@ void SYS_Init()
     SYS_LockReg();
 }
 
-/* main function */
+/* main function - runs on core 0 */
 int main(void)
 {
     SYS_Init();
 
     sysprintf("\n\nCPU @ %d Hz\n", SystemCoreClock);
+    sysprintf("FreeRTOS-SMP starting on %d cores\n", configNUM_CORES);
+
+    /* Install SGI0 yield handler on core 0 as well. */
+    IRQ_SetHandler( (IRQn_ID_t)SGI0_IRQn, prvSGI0YieldHandler );
+    IRQ_SetPriority( (IRQn_ID_t)SGI0_IRQn,
+                     configMAX_API_CALL_INTERRUPT_PRIORITY << portPRIORITY_SHIFT );
+    IRQ_Enable( (IRQn_ID_t)SGI0_IRQn );
+
+    /* Boot core 1.  It will enter main1() and spin-wait until the
+     * scheduler populates pxCurrentTCBs[1].  We must boot it before
+     * calling main_blinky/main_full because vTaskStartScheduler()
+     * never returns.
+     *
+     * IMPORTANT: Do NOT define the EnSecondaryCore preprocessor symbol.
+     * We control core 1 boot timing explicitly here rather than letting
+     * it start automatically during SystemInit0(). */
+    RunCore1();
 
     /* The mainSELECTED_APPLICATION setting is described at the top
     of this file. */

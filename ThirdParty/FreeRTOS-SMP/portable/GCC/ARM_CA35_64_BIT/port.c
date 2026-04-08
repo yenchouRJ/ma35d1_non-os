@@ -32,6 +32,10 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
+/* BSP includes for SMP support. */
+#include "cpu.h"
+#include "core_ca.h"
+
 #ifndef configINTERRUPT_CONTROLLER_BASE_ADDRESS
 	#error configINTERRUPT_CONTROLLER_BASE_ADDRESS must be defined.  See https://www.FreeRTOS.org/Using-FreeRTOS-on-Cortex-A-Embedded-Processors.html
 #endif
@@ -132,6 +136,9 @@ point is zero. */
 #define portMAX_8_BIT_VALUE							( ( uint8_t ) 0xff )
 #define portBIT_0_SET								( ( uint8_t ) 0x01 )
 
+/* SGI used for inter-core yield. We use SGI0 for FreeRTOS yield. */
+#define portSGI_YIELD								( SGI0_IRQn )
+
 /*-----------------------------------------------------------*/
 
 /*
@@ -147,24 +154,30 @@ variable has to be stored as part of the task context and must be initialised to
 a non zero value to ensure interrupts don't inadvertently become unmasked before
 the scheduler starts.  As it is stored as part of the task context it will
 automatically be set to 0 when the first task is started. */
-volatile uint64_t ullCriticalNesting = 9999ULL;
+volatile uint64_t ullCriticalNesting[ configNUM_CORES ] = { [ 0 ... ( configNUM_CORES - 1 ) ] = 9999ULL };
 
 /* Saved as part of the task context.  If ullPortTaskHasFPUContext is non-zero
 then floating point context must be saved and restored for the task. */
-uint64_t ullPortTaskHasFPUContext = pdFALSE;
+uint64_t ullPortTaskHasFPUContext[ configNUM_CORES ] = { 0 };
 
 /* Set to 1 to pend a context switch from an ISR. */
-uint64_t ullPortYieldRequired = pdFALSE;
+uint64_t ullPortYieldRequired[ configNUM_CORES ] = { 0 };
 
 /* Counts the interrupt nesting depth.  A context switch is only performed if
 if the nesting depth is 0. */
-uint64_t ullPortInterruptNesting = 0;
+uint64_t ullPortInterruptNesting[ configNUM_CORES ] = { 0 };
 
 /* Used in the ASM code. */
 __attribute__(( used )) const uint64_t ullICCEOIR = portICCEOIR_END_OF_INTERRUPT_REGISTER_ADDRESS;
 __attribute__(( used )) const uint64_t ullICCIAR = portICCIAR_INTERRUPT_ACKNOWLEDGE_REGISTER_ADDRESS;
 __attribute__(( used )) const uint64_t ullICCPMR = portICCPMR_PRIORITY_MASK_REGISTER_ADDRESS;
 __attribute__(( used )) const uint64_t ullMaxAPIPriorityMask = ( configMAX_API_CALL_INTERRUPT_PRIORITY << portPRIORITY_SHIFT );
+
+/* SMP spinlocks for task-level and ISR-level critical sections.
+ * These use the BSP's cpu_spin_lock/cpu_spin_unlock which implement
+ * proper ARMv8 exclusive access (LDAXR/STXR/STLR). */
+static unsigned int ulTaskLock = 0;
+static unsigned int ulISRLock = 0;
 
 /*-----------------------------------------------------------*/
 
@@ -346,43 +359,48 @@ void vPortEndScheduler( void )
 {
 	/* Not implemented in ports where there is nothing to return to.
 	Artificially force an assert. */
-	configASSERT( ullCriticalNesting == 1000ULL );
+	configASSERT( ullCriticalNesting[ portGET_CORE_ID() ] == 1000ULL );
 }
 /*-----------------------------------------------------------*/
 
 void vPortEnterCritical( void )
 {
+	BaseType_t xCoreID;
+
 	/* Mask interrupts up to the max syscall interrupt priority. */
 	uxPortSetInterruptMask();
 
 	/* Now interrupts are disabled ullCriticalNesting can be accessed
 	directly.  Increment ullCriticalNesting to keep a count of how many times
 	portENTER_CRITICAL() has been called. */
-	ullCriticalNesting++;
+	xCoreID = portGET_CORE_ID();
+	ullCriticalNesting[ xCoreID ]++;
 
 	/* This is not the interrupt safe version of the enter critical function so
 	assert() if it is being called from an interrupt context.  Only API
 	functions that end in "FromISR" can be used in an interrupt.  Only assert if
 	the critical nesting count is 1 to protect against recursive calls if the
 	assert function also uses a critical section. */
-	if( ullCriticalNesting == 1ULL )
+	if( ullCriticalNesting[ xCoreID ] == 1ULL )
 	{
-		configASSERT( ullPortInterruptNesting == 0 );
+		configASSERT( ullPortInterruptNesting[ xCoreID ] == 0 );
 	}
 }
 /*-----------------------------------------------------------*/
 
 void vPortExitCritical( void )
 {
-	if( ullCriticalNesting > portNO_CRITICAL_NESTING )
+	BaseType_t xCoreID = portGET_CORE_ID();
+
+	if( ullCriticalNesting[ xCoreID ] > portNO_CRITICAL_NESTING )
 	{
 		/* Decrement the nesting count as the critical section is being
 		exited. */
-		ullCriticalNesting--;
+		ullCriticalNesting[ xCoreID ]--;
 
 		/* If the nesting level has reached zero then all interrupt
 		priorities must be re-enabled. */
-		if( ullCriticalNesting == portNO_CRITICAL_NESTING )
+		if( ullCriticalNesting[ xCoreID ] == portNO_CRITICAL_NESTING )
 		{
 			/* Critical nesting has reached zero so all interrupt priorities
 			should be unmasked. */
@@ -394,6 +412,8 @@ void vPortExitCritical( void )
 
 void FreeRTOS_Tick_Handler( void )
 {
+	BaseType_t xCoreID = portGET_CORE_ID();
+
 	/* Must be the lowest possible priority. */
 	#if !defined( QEMU )
 	{
@@ -427,7 +447,7 @@ void FreeRTOS_Tick_Handler( void )
 	/* Increment the RTOS tick. */
 	if( xTaskIncrementTick() != pdFALSE )
 	{
-		ullPortYieldRequired = pdTRUE;
+		ullPortYieldRequired[ xCoreID ] = pdTRUE;
 	}
 
 	/* Ensure all interrupt priorities are active again. */
@@ -439,7 +459,7 @@ void vPortTaskUsesFPU( void )
 {
 	/* A task is registering the fact that it needs an FPU context.  Set the
 	FPU flag (which is saved as part of the task context). */
-	ullPortTaskHasFPUContext = pdTRUE;
+	ullPortTaskHasFPUContext[ portGET_CORE_ID() ] = pdTRUE;
 
 	/* Consider initialising the FPSR here - but probably not necessary in
 	AArch64. */
@@ -480,6 +500,49 @@ uint32_t ulReturn;
 }
 /*-----------------------------------------------------------*/
 
+/*
+ * SMP spinlock functions.
+ * These use the BSP's cpu_spin_lock / cpu_spin_unlock which implement
+ * proper ARMv8 exclusive access primitives (LDAXR/STXR/STLR).
+ */
+
+void vPortGetTaskLock( void )
+{
+	cpu_spin_lock( &ulTaskLock );
+}
+/*-----------------------------------------------------------*/
+
+void vPortReleaseTaskLock( void )
+{
+	cpu_spin_unlock( &ulTaskLock );
+}
+/*-----------------------------------------------------------*/
+
+void vPortGetISRLock( void )
+{
+	cpu_spin_lock( &ulISRLock );
+}
+/*-----------------------------------------------------------*/
+
+void vPortReleaseISRLock( void )
+{
+	cpu_spin_unlock( &ulISRLock );
+}
+/*-----------------------------------------------------------*/
+
+/*
+ * Send an SGI to yield a specific core.
+ * The target_list is a bitmask of target CPUs.
+ * filter_list = 0 means "use target_list" in GICv2.
+ */
+void vPortYieldCore( BaseType_t xCoreID )
+{
+	/* Send SGI0 to the target core to trigger a yield.
+	 * target_list is a CPU bitmask: bit 0 = core 0, bit 1 = core 1 */
+	GIC_SendSGI( ( IRQn_Type ) portSGI_YIELD, ( uint32_t ) ( 1UL << xCoreID ), 0 );
+}
+/*-----------------------------------------------------------*/
+
 #if( configASSERT_DEFINED == 1 )
 
 	void vPortValidateInterruptPriority( void )
@@ -515,4 +578,3 @@ uint32_t ulReturn;
 
 #endif /* configASSERT_DEFINED */
 /*-----------------------------------------------------------*/
-

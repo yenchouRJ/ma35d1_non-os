@@ -72,17 +72,48 @@ not need to be guarded with a critical section. */
 
 /*-----------------------------------------------------------*/
 
+/* SMP support. */
+
+/* Get the current core ID from MPIDR_EL1. */
+static inline BaseType_t portGET_CORE_ID( void )
+{
+	uint64_t mpidr;
+	__asm volatile ( "MRS %0, MPIDR_EL1" : "=r" ( mpidr ) );
+	return ( BaseType_t ) ( mpidr & 0x3UL );
+}
+
+/* Yield a specific core by sending an SGI (Software Generated Interrupt). */
+extern void vPortYieldCore( BaseType_t xCoreID );
+#define portYIELD_CORE( xCoreID )	vPortYieldCore( xCoreID )
+
+/* Check if we are in an ISR context. */
+extern uint64_t ullPortInterruptNesting[];
+#define portCHECK_IF_IN_ISR()		( ullPortInterruptNesting[ portGET_CORE_ID() ] > 0 )
+
+/* SMP spinlock functions for task and ISR level critical sections. */
+extern void vPortGetTaskLock( void );
+extern void vPortReleaseTaskLock( void );
+extern void vPortGetISRLock( void );
+extern void vPortReleaseISRLock( void );
+
+#define portGET_TASK_LOCK()			vPortGetTaskLock()
+#define portRELEASE_TASK_LOCK()		vPortReleaseTaskLock()
+#define portGET_ISR_LOCK()			vPortGetISRLock()
+#define portRELEASE_ISR_LOCK()		vPortReleaseISRLock()
+
+/*-----------------------------------------------------------*/
+
 /* Task utilities. */
 
 /* Called at the end of an ISR that can cause a context switch. */
-#define portEND_SWITCHING_ISR( xSwitchRequired )\
-{												\
-extern uint64_t ullPortYieldRequired;			\
-												\
-	if( xSwitchRequired != pdFALSE )			\
-	{											\
-		ullPortYieldRequired = pdTRUE;			\
-	}											\
+#define portEND_SWITCHING_ISR( xSwitchRequired )	\
+{													\
+extern uint64_t ullPortYieldRequired[];				\
+													\
+	if( xSwitchRequired != pdFALSE )				\
+	{												\
+		ullPortYieldRequired[ portGET_CORE_ID() ] = pdTRUE;	\
+	}												\
 }
 
 #define portYIELD_FROM_ISR( x ) portEND_SWITCHING_ISR( x )
@@ -101,16 +132,33 @@ extern UBaseType_t uxPortSetInterruptMask( void );
 extern void vPortClearInterruptMask( UBaseType_t uxNewMaskValue );
 extern void vPortInstallFreeRTOSVectorTable( void );
 
-#define portDISABLE_INTERRUPTS()									\
-	__asm volatile ( "MSR DAIFSET, #2" ::: "memory" );				\
-	__asm volatile ( "DSB SY" );									\
+/*
+ * SMP-compatible portDISABLE_INTERRUPTS: saves and returns the DAIF state
+ * so it can be restored later with portRESTORE_INTERRUPTS.
+ */
+static inline UBaseType_t portDISABLE_INTERRUPTS( void )
+{
+	UBaseType_t ulState;
+	__asm volatile ( "MRS %0, DAIF" : "=r" ( ulState ) :: "memory" );
+	__asm volatile ( "MSR DAIFSET, #2" ::: "memory" );
+	__asm volatile ( "DSB SY" );
 	__asm volatile ( "ISB SY" );
+	return ulState;
+}
 
-#define portENABLE_INTERRUPTS()										\
-	__asm volatile ( "MSR DAIFCLR, #2" ::: "memory" );				\
-	__asm volatile ( "DSB SY" );									\
+static inline void portENABLE_INTERRUPTS( void )
+{
+	__asm volatile ( "MSR DAIFCLR, #2" ::: "memory" );
+	__asm volatile ( "DSB SY" );
 	__asm volatile ( "ISB SY" );
+}
 
+#define portRESTORE_INTERRUPTS( ulState )							\
+{																	\
+	__asm volatile ( "MSR DAIF, %0" :: "r" ( ulState ) : "memory" );\
+	__asm volatile ( "DSB SY" );									\
+	__asm volatile ( "ISB SY" );									\
+}
 
 /* These macros do not globally disable/enable interrupts.  They do mask off
 interrupts that have a priority below configMAX_API_CALL_INTERRUPT_PRIORITY. */
@@ -208,4 +256,3 @@ number of bits implemented by the interrupt controller. */
 #define portMEMORY_BARRIER() __asm volatile( "" ::: "memory" )
 
 #endif /* PORTMACRO_H */
-
