@@ -92,6 +92,66 @@ void main1( void )
     for( ;; );
 }
 
+/*-----------------------------------------------------------*/
+/* Secondary core (core 1) entry point.                      */
+/*-----------------------------------------------------------*/
+
+/*
+ * main1() overrides the weak default in system_MA35D1.c.
+ *
+ * Boot sequence for core 1:
+ *   startup.S: SecondaryCore -> set stack -> SystemInit1() -> main1()
+ *
+ * SystemInit1() has already:
+ *   - Set the generic timer frequency
+ *   - Initialised the MMU
+ *   - Initialised the GIC CPU interface
+ *   - Enabled interrupts
+ *
+ * What we do here:
+ *   1. Configure the per-core generic timer for tick interrupts (PPI 30)
+ *   2. Install the SGI0 yield handler on this core's GIC
+ *   3. Wait for core 0 to start the scheduler (pxCurrentTCBs[1] populated)
+ *   4. Enter the FreeRTOS scheduler via vPortRestoreTaskContext()
+ *      (which installs the FreeRTOS vector table and ERET into the
+ *       first task assigned to this core)
+ */
+void main1( void )
+{
+	/* 1. Set up the generic timer tick for core 1. */
+	vConfigureTickInterruptCore1();
+
+	/* 2. Install the SGI0 yield handler on this core.
+	 *    The GIC CPU interface was already initialised by SystemInit1().
+	 *    IRQ_SetHandler / IRQ_Enable work on the calling core's PPI/SGI. */
+	IRQ_SetHandler( (IRQn_ID_t)SGI0_IRQn, prvSGI0YieldHandler );
+	IRQ_SetPriority( (IRQn_ID_t)SGI0_IRQn,
+	                 configMAX_API_CALL_INTERRUPT_PRIORITY << portPRIORITY_SHIFT );
+	IRQ_Enable( (IRQn_ID_t)SGI0_IRQn );
+
+	/* 3. Spin until the SMP scheduler has assigned a task to this core.
+	 *    vTaskStartScheduler() on core 0 creates idle tasks for all cores
+	 *    and populates pxCurrentTCBs[] before calling vPortRestoreTaskContext().
+	 *    We must wait until pxCurrentTCBs[1] is non-NULL to avoid entering
+	 *    portRESTORE_CONTEXT with a NULL stack pointer. */
+	while( pxCurrentTCBs[ 1 ] == NULL )
+	{
+		__asm volatile ( "yield" );
+	}
+
+	/* Ensure we see all writes from core 0. */
+	__asm volatile ( "DSB SY" ::: "memory" );
+	__asm volatile ( "ISB SY" );
+
+	/* 4. Enter the scheduler.  vPortRestoreTaskContext() installs the
+	 *    FreeRTOS vector table (VBAR_EL3) and ERETs into the task
+	 *    stored in pxCurrentTCBs[1].  This function never returns. */
+	vPortRestoreTaskContext();
+
+	/* Should never reach here. */
+	for( ;; );
+}
+
 void UART0_Init()
 {
     /* Enable UART0 clock */
