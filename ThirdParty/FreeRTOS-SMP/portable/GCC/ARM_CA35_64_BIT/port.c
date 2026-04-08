@@ -131,6 +131,9 @@ port.c for GIC priority mask register access. */
 #define portMAX_8_BIT_VALUE							( ( uint8_t ) 0xff )
 #define portBIT_0_SET								( ( uint8_t ) 0x01 )
 
+/* SGI used for inter-core yield. We use SGI0 for FreeRTOS yield. */
+#define portSGI_YIELD								( SGI0_IRQn )
+
 /*-----------------------------------------------------------*/
 
 /*
@@ -509,6 +512,49 @@ uint32_t ulReturn;
 	portENABLE_INTERRUPTS();
 
 	return ulReturn;
+}
+/*-----------------------------------------------------------*/
+
+/*
+ * SMP spinlock functions.
+ * These use the BSP's cpu_spin_lock / cpu_spin_unlock which implement
+ * proper ARMv8 exclusive access primitives (LDAXR/STXR/STLR).
+ */
+
+void vPortGetTaskLock( void )
+{
+	cpu_spin_lock( &ulTaskLock );
+}
+/*-----------------------------------------------------------*/
+
+void vPortReleaseTaskLock( void )
+{
+	cpu_spin_unlock( &ulTaskLock );
+}
+/*-----------------------------------------------------------*/
+
+void vPortGetISRLock( void )
+{
+	cpu_spin_lock( &ulISRLock );
+}
+/*-----------------------------------------------------------*/
+
+void vPortReleaseISRLock( void )
+{
+	cpu_spin_unlock( &ulISRLock );
+}
+/*-----------------------------------------------------------*/
+
+/*
+ * Send an SGI to yield a specific core.
+ * The target_list is a bitmask of target CPUs.
+ * filter_list = 0 means "use target_list" in GICv2.
+ */
+void vPortYieldCore( BaseType_t xCoreID )
+{
+	/* Send SGI0 to the target core to trigger a yield.
+	 * target_list is a CPU bitmask: bit 0 = core 0, bit 1 = core 1 */
+	GIC_SendSGI( ( IRQn_Type ) portSGI_YIELD, ( uint32_t ) ( 1UL << xCoreID ), 0 );
 }
 /*-----------------------------------------------------------*/
 
