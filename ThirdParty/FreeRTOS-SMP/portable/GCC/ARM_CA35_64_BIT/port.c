@@ -500,6 +500,42 @@ uint32_t ulReturn;
 }
 /*-----------------------------------------------------------*/
 
+#if( configASSERT_DEFINED == 1 )
+
+	void vPortValidateInterruptPriority( void )
+	{
+		/* The following assertion will fail if a service routine (ISR) for
+		an interrupt that has been assigned a priority above
+		configMAX_SYSCALL_INTERRUPT_PRIORITY calls an ISR safe FreeRTOS API
+		function.  ISR safe FreeRTOS API functions must *only* be called
+		from interrupts that have been assigned a priority at or below
+		configMAX_SYSCALL_INTERRUPT_PRIORITY.
+
+		Numerically low interrupt priority numbers represent logically high
+		interrupt priorities, therefore the priority of the interrupt must
+		be set to a value equal to or numerically *higher* than
+		configMAX_SYSCALL_INTERRUPT_PRIORITY.
+
+		FreeRTOS maintains separate thread and ISR API functions to ensure
+		interrupt entry is as fast and simple as possible. */
+		configASSERT( portICCRPR_RUNNING_PRIORITY_REGISTER >= ( uint32_t ) ( configMAX_API_CALL_INTERRUPT_PRIORITY << portPRIORITY_SHIFT ) );
+
+		/* Priority grouping:  The interrupt controller (GIC) allows the bits
+		that define each interrupt's priority to be split between bits that
+		define the interrupt's pre-emption priority bits and bits that define
+		the interrupt's sub-priority.  For simplicity all bits must be defined
+		to be pre-emption priority bits.  The following assertion will fail if
+		this is not the case (if some bits represent a sub-priority).
+
+		The priority grouping is configured by the GIC's binary point register
+		(ICCBPR).  Writting 0 to ICCBPR will ensure it is set to its lowest
+		possible value (which may be above 0). */
+		configASSERT( ( portICCBPR_BINARY_POINT_REGISTER & portBINARY_POINT_BITS ) <= portMAX_BINARY_POINT_VALUE );
+	}
+
+#endif /* configASSERT_DEFINED */
+/*-----------------------------------------------------------*/
+
 /*
  * SMP spinlock functions.
  * These use the BSP's cpu_spin_lock / cpu_spin_unlock which implement
@@ -541,40 +577,4 @@ void vPortYieldCore( BaseType_t xCoreID )
 	 * target_list is a CPU bitmask: bit 0 = core 0, bit 1 = core 1 */
 	GIC_SendSGI( ( IRQn_Type ) portSGI_YIELD, ( uint32_t ) ( 1UL << xCoreID ), 0 );
 }
-/*-----------------------------------------------------------*/
-
-#if( configASSERT_DEFINED == 1 )
-
-	void vPortValidateInterruptPriority( void )
-	{
-		/* The following assertion will fail if a service routine (ISR) for
-		an interrupt that has been assigned a priority above
-		configMAX_SYSCALL_INTERRUPT_PRIORITY calls an ISR safe FreeRTOS API
-		function.  ISR safe FreeRTOS API functions must *only* be called
-		from interrupts that have been assigned a priority at or below
-		configMAX_SYSCALL_INTERRUPT_PRIORITY.
-
-		Numerically low interrupt priority numbers represent logically high
-		interrupt priorities, therefore the priority of the interrupt must
-		be set to a value equal to or numerically *higher* than
-		configMAX_SYSCALL_INTERRUPT_PRIORITY.
-
-		FreeRTOS maintains separate thread and ISR API functions to ensure
-		interrupt entry is as fast and simple as possible. */
-		configASSERT( portICCRPR_RUNNING_PRIORITY_REGISTER >= ( uint32_t ) ( configMAX_API_CALL_INTERRUPT_PRIORITY << portPRIORITY_SHIFT ) );
-
-		/* Priority grouping:  The interrupt controller (GIC) allows the bits
-		that define each interrupt's priority to be split between bits that
-		define the interrupt's pre-emption priority bits and bits that define
-		the interrupt's sub-priority.  For simplicity all bits must be defined
-		to be pre-emption priority bits.  The following assertion will fail if
-		this is not the case (if some bits represent a sub-priority).
-
-		The priority grouping is configured by the GIC's binary point register
-		(ICCBPR).  Writting 0 to ICCBPR will ensure it is set to its lowest
-		possible value (which may be above 0). */
-		configASSERT( ( portICCBPR_BINARY_POINT_REGISTER & portBINARY_POINT_BITS ) <= portMAX_BINARY_POINT_VALUE );
-	}
-
-#endif /* configASSERT_DEFINED */
 /*-----------------------------------------------------------*/

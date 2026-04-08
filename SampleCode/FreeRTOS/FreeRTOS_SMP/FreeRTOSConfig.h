@@ -164,6 +164,8 @@ is set to 1. */
 #define portCONFIGURE_TIMER_FOR_RUN_TIME_STATS()
 #define portGET_RUN_TIME_COUNTER_VALUE()
 
+#define portCRITICAL_NESTING_IN_TCB             1
+
 /* The size of the global output buffer that is available for use when there
 are multiple command interpreters running at once (for example, one on a UART
 and one on TCP/IP).  This is done to prevent an output buffer being defined by

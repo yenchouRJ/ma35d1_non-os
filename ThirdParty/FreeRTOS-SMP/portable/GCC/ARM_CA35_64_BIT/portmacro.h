@@ -78,7 +78,7 @@ not need to be guarded with a critical section. */
 static inline BaseType_t portGET_CORE_ID( void )
 {
 	uint64_t mpidr;
-	__asm volatile ( "MRS %0, MPIDR_EL1" : "=r" ( mpidr ) );
+	__asm volatile ( "MRS %0, MPIDR_EL1" : "=r" ( mpidr ) ); // cpuid()
 	return ( BaseType_t ) ( mpidr & 0x3UL );
 }
 
