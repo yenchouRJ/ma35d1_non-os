@@ -107,7 +107,7 @@
 						</toolChain>
 					</folderInfo>
 					<sourceEntries>
-						<entry excluding="FreeRTOS/Common|User/reg_test.S|FreeRTOS/Kernel/portable/Common/mpu_wrappers.c|User/main_full.c|User/IntQueueTimer.c" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name=""/>
+						<entry excluding="FreeRTOS/Kernel/portable/Common|FreeRTOS/Common|User/reg_test.S|User/main_full.c|User/IntQueueTimer.c" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name=""/>
 					</sourceEntries>
 				</configuration>
 			</storageModule>

@@ -74,13 +74,16 @@ not need to be guarded with a critical section. */
 
 /* SMP support. */
 
-/* Get the current core ID from MPIDR_EL1. */
-static inline BaseType_t portGET_CORE_ID( void )
+/* Get the current core ID from MPIDR_EL1.
+ * Must be a #define macro so that FreeRTOS.h's #ifndef portGET_CORE_ID check
+ * passes.  The inline function provides the actual implementation. */
+static inline BaseType_t xPortGetCoreID( void )
 {
 	uint64_t mpidr;
 	__asm volatile ( "MRS %0, MPIDR_EL1" : "=r" ( mpidr ) ); // cpuid()
 	return ( BaseType_t ) ( mpidr & 0x3UL );
 }
+#define portGET_CORE_ID()	xPortGetCoreID()
 
 /* Yield a specific core by sending an SGI (Software Generated Interrupt). */
 extern void vPortYieldCore( BaseType_t xCoreID );
@@ -90,16 +93,18 @@ extern void vPortYieldCore( BaseType_t xCoreID );
 extern uint64_t ullPortInterruptNesting[];
 #define portCHECK_IF_IN_ISR()		( ullPortInterruptNesting[ portGET_CORE_ID() ] > 0 )
 
-/* SMP spinlock functions for task and ISR level critical sections. */
+/* SMP spinlock functions for task and ISR level critical sections.
+ * The new kernel passes xCoreID to lock macros but our BSP spinlocks
+ * are global (not per-core), so the parameter is accepted and ignored. */
 extern void vPortGetTaskLock( void );
 extern void vPortReleaseTaskLock( void );
 extern void vPortGetISRLock( void );
 extern void vPortReleaseISRLock( void );
 
-#define portGET_TASK_LOCK()			vPortGetTaskLock()
-#define portRELEASE_TASK_LOCK()		vPortReleaseTaskLock()
-#define portGET_ISR_LOCK()			vPortGetISRLock()
-#define portRELEASE_ISR_LOCK()		vPortReleaseISRLock()
+#define portGET_TASK_LOCK( xCoreID )		do { ( void ) ( xCoreID ); vPortGetTaskLock(); } while( 0 )
+#define portRELEASE_TASK_LOCK( xCoreID )	do { ( void ) ( xCoreID ); vPortReleaseTaskLock(); } while( 0 )
+#define portGET_ISR_LOCK( xCoreID )			do { ( void ) ( xCoreID ); vPortGetISRLock(); } while( 0 )
+#define portRELEASE_ISR_LOCK( xCoreID )		do { ( void ) ( xCoreID ); vPortReleaseISRLock(); } while( 0 )
 
 /*-----------------------------------------------------------*/
 
@@ -178,6 +183,21 @@ static inline void portENABLE_INTERRUPTS( void )
 #endif
 #define portSET_INTERRUPT_MASK_FROM_ISR()		uxPortSetInterruptMask()
 #define portCLEAR_INTERRUPT_MASK_FROM_ISR(x)	vPortClearInterruptMask(x)
+
+/* SMP-required interrupt mask macros (FreeRTOS v11.1+).
+ * portSET_INTERRUPT_MASK must save and return a value that can later be
+ * passed to portCLEAR_INTERRUPT_MASK to restore the previous state.
+ * Our portDISABLE_INTERRUPTS() already returns the DAIF state. */
+#define portSET_INTERRUPT_MASK()				portDISABLE_INTERRUPTS()
+#define portCLEAR_INTERRUPT_MASK( x )			portRESTORE_INTERRUPTS( x )
+
+/* SMP-required ISR critical section macros (FreeRTOS v11.1+).
+ * These delegate to the kernel's SMP-aware critical section management
+ * which acquires the ISR spinlock and tracks nesting. */
+extern UBaseType_t vTaskEnterCriticalFromISR( void );
+extern void vTaskExitCriticalFromISR( UBaseType_t uxSavedInterruptStatus );
+#define portENTER_CRITICAL_FROM_ISR()			vTaskEnterCriticalFromISR()
+#define portEXIT_CRITICAL_FROM_ISR( x )			vTaskExitCriticalFromISR( x )
 
 /*-----------------------------------------------------------*/
 

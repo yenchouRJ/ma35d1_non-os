@@ -100,7 +100,7 @@
 	LDR		X0, ullPortTaskHasFPUContextConst
 	LDR		X2, [X0, X4, LSL #3]		/* ullPortTaskHasFPUContext[coreID] */
 
-	/* Save the FPU context, if any (32 128-bit registers). */
+	/* Save the FPU context, if any (32 128-bit Q registers + FPSR/FPCR). */
 	CMP		X2, #0
 	B.EQ	1f
 	STP		Q0, Q1, [SP,#-0x20]!
@@ -119,6 +119,11 @@
 	STP		Q26, Q27, [SP,#-0x20]!
 	STP		Q28, Q29, [SP,#-0x20]!
 	STP		Q30, Q31, [SP,#-0x20]!
+
+	/* Save FPSR and FPCR. */
+	MRS		X7, FPSR
+	MRS		X8, FPCR
+	STP		X7, X8, [SP, #-0x10]!
 
 1:
 	/* Store the critical nesting count and FPU context indicator. */
@@ -173,9 +178,15 @@
 	LDR		X0, ullPortTaskHasFPUContextConst
 	STR		X2, [X0, X4, LSL #3]		/* per-core */
 
-	/* Restore the FPU context, if any. */
+	/* Restore the FPU context, if any (FPSR/FPCR + 32 Q registers). */
 	CMP		X2, #0
 	B.EQ	1f
+
+	/* Restore FPSR and FPCR first (saved last, so on top). */
+	LDP		X7, X8, [SP], #0x10
+	MSR		FPSR, X7
+	MSR		FPCR, X8
+
 	LDP		Q30, Q31, [SP], #0x20
 	LDP		Q28, Q29, [SP], #0x20
 	LDP		Q26, Q27, [SP], #0x20

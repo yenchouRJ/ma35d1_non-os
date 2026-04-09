@@ -75,7 +75,7 @@ extern uint32_t SystemCoreClock;
 /* Number of cores available to FreeRTOS-SMP.  The MA35D1 has two
  * Cortex-A35 cores.  Setting this to 2 enables the SMP scheduler
  * which creates per-core idle tasks and uses pxCurrentTCBs[]. */
-#define configNUM_CORES                         2
+#define configNUMBER_OF_CORES                    2
 
 /* Allow tasks of different priorities to run simultaneously on
  * different cores.  Without this, only the N highest-priority
@@ -88,6 +88,10 @@ extern uint32_t SystemCoreClock;
 
 /* Do not allow individual tasks to disable their own preemption. */
 #define configUSE_TASK_PREEMPTION_DISABLE        0
+
+/* The passive idle hook is called in the passive idle tasks (cores 1+).
+ * Not needed for the initial SMP bringup. */
+#define configUSE_PASSIVE_IDLE_HOOK              0
 
 /*-----------------------------------------------------------
  * General Configuration.
@@ -110,7 +114,10 @@ extern uint32_t SystemCoreClock;
 #define configMAX_TASK_NAME_LEN         ( 16 )
 
 #define configUSE_TRACE_FACILITY        1
-#define configUSE_16_BIT_TICKS          0
+/* Use the new configTICK_TYPE_WIDTH_IN_BITS instead of the deprecated
+configUSE_16_BIT_TICKS.  Our portmacro.h defines TickType_t as uint64_t,
+so we select 64-bit tick width to match. */
+#define configTICK_TYPE_WIDTH_IN_BITS   TICK_TYPE_WIDTH_64_BITS
 #define configIDLE_SHOULD_YIELD         1
 #define configUSE_MUTEXES               1
 #define configQUEUE_REGISTRY_SIZE       8

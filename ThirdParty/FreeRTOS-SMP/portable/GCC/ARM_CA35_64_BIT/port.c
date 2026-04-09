@@ -121,8 +121,15 @@ point is zero. */
 /* The I bit in the DAIF bits. */
 #define portDAIF_I						( 0x80 )
 
-/* Macro to unmask all interrupt priorities. */
-#define portCLEAR_INTERRUPT_MASK()									\
+/* Macro to unmask all GIC interrupt priorities.
+ *
+ * NOTE: This was previously named portCLEAR_INTERRUPT_MASK() which collides
+ * with the SMP kernel macro portCLEAR_INTERRUPT_MASK(x) defined in
+ * portmacro.h (FreeRTOS v11.1+).  Renamed to portUNMASK_GIC_PRIORITY()
+ * to avoid confusion.  The portmacro.h version (with parameter) is used
+ * by the kernel for SMP interrupt state save/restore (DAIF-based); this
+ * macro is used only within port.c for GIC priority mask register access. */
+#define portUNMASK_GIC_PRIORITY()									\
 {																	\
 	portDISABLE_INTERRUPTS();										\
 	portICCPMR_PRIORITY_MASK_REGISTER = portUNMASK_VALUE;			\
@@ -154,18 +161,18 @@ variable has to be stored as part of the task context and must be initialised to
 a non zero value to ensure interrupts don't inadvertently become unmasked before
 the scheduler starts.  As it is stored as part of the task context it will
 automatically be set to 0 when the first task is started. */
-volatile uint64_t ullCriticalNesting[ configNUM_CORES ] = { [ 0 ... ( configNUM_CORES - 1 ) ] = 9999ULL };
+volatile uint64_t ullCriticalNesting[ configNUMBER_OF_CORES ] = { [ 0 ... ( configNUMBER_OF_CORES - 1 ) ] = 9999ULL };
 
 /* Saved as part of the task context.  If ullPortTaskHasFPUContext is non-zero
 then floating point context must be saved and restored for the task. */
-uint64_t ullPortTaskHasFPUContext[ configNUM_CORES ] = { 0 };
+uint64_t ullPortTaskHasFPUContext[ configNUMBER_OF_CORES ] = { 0 };
 
 /* Set to 1 to pend a context switch from an ISR. */
-uint64_t ullPortYieldRequired[ configNUM_CORES ] = { 0 };
+uint64_t ullPortYieldRequired[ configNUMBER_OF_CORES ] = { 0 };
 
 /* Counts the interrupt nesting depth.  A context switch is only performed if
 if the nesting depth is 0. */
-uint64_t ullPortInterruptNesting[ configNUM_CORES ] = { 0 };
+uint64_t ullPortInterruptNesting[ configNUMBER_OF_CORES ] = { 0 };
 
 /* Used in the ASM code. */
 __attribute__(( used )) const uint64_t ullICCEOIR = portICCEOIR_END_OF_INTERRUPT_REGISTER_ADDRESS;
@@ -404,7 +411,7 @@ void vPortExitCritical( void )
 		{
 			/* Critical nesting has reached zero so all interrupt priorities
 			should be unmasked. */
-			portCLEAR_INTERRUPT_MASK();
+			portUNMASK_GIC_PRIORITY();
 		}
 	}
 }
@@ -451,7 +458,7 @@ void FreeRTOS_Tick_Handler( void )
 	}
 
 	/* Ensure all interrupt priorities are active again. */
-	portCLEAR_INTERRUPT_MASK();
+	portUNMASK_GIC_PRIORITY();
 }
 /*-----------------------------------------------------------*/
 
@@ -470,7 +477,7 @@ void vPortClearInterruptMask( UBaseType_t uxNewMaskValue )
 {
 	if( uxNewMaskValue == pdFALSE )
 	{
-		portCLEAR_INTERRUPT_MASK();
+		portUNMASK_GIC_PRIORITY();
 	}
 }
 /*-----------------------------------------------------------*/

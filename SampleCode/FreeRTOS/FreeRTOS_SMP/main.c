@@ -172,7 +172,7 @@ implementation of vApplicationGetIdleTaskMemory() to provide the memory that is
 used by the Idle task.  Note: In the SMP kernel, this callback is only called
 for core 0's idle task.  Core 1's idle task uses internal static buffers
 allocated inside prvCreateIdleTasks(). */
-void vApplicationGetIdleTaskMemory( StaticTask_t **ppxIdleTaskTCBBuffer, StackType_t **ppxIdleTaskStackBuffer, uint32_t *pulIdleTaskStackSize )
+void vApplicationGetIdleTaskMemory( StaticTask_t **ppxIdleTaskTCBBuffer, StackType_t **ppxIdleTaskStackBuffer, configSTACK_DEPTH_TYPE *puxIdleTaskStackSize )
 {
     /* If the buffers to be provided to the Idle task are declared inside this
     function then they must be declared static - otherwise they will be allocated on
@@ -190,14 +190,31 @@ void vApplicationGetIdleTaskMemory( StaticTask_t **ppxIdleTaskTCBBuffer, StackTy
     /* Pass out the size of the array pointed to by *ppxIdleTaskStackBuffer.
     Note that, as the array is necessarily of type StackType_t,
     configMINIMAL_STACK_SIZE is specified in words, not bytes. */
-    *pulIdleTaskStackSize = configMINIMAL_STACK_SIZE;
+    *puxIdleTaskStackSize = configMINIMAL_STACK_SIZE;
+}
+/*-----------------------------------------------------------*/
+
+/* SMP: The new kernel (v11.1+) requires a separate memory callback for
+passive idle tasks (cores 1 through configNUMBER_OF_CORES-1).  Core 0's
+idle task uses vApplicationGetIdleTaskMemory() above; all other cores'
+idle tasks use this function.  For a dual-core system this is called once
+with xPassiveIdleTaskIndex == 0 (for core 1's idle task). */
+void vApplicationGetPassiveIdleTaskMemory( StaticTask_t **ppxIdleTaskTCBBuffer, StackType_t **ppxIdleTaskStackBuffer, configSTACK_DEPTH_TYPE *puxIdleTaskStackSize, BaseType_t xPassiveIdleTaskIndex )
+{
+    /* We only have one passive idle task (core 1).  Use static buffers. */
+    static StaticTask_t xPassiveIdleTaskTCBs[ configNUMBER_OF_CORES - 1 ];
+    static StackType_t uxPassiveIdleTaskStacks[ configNUMBER_OF_CORES - 1 ][ configMINIMAL_STACK_SIZE ];
+
+    *ppxIdleTaskTCBBuffer = &xPassiveIdleTaskTCBs[ xPassiveIdleTaskIndex ];
+    *ppxIdleTaskStackBuffer = uxPassiveIdleTaskStacks[ xPassiveIdleTaskIndex ];
+    *puxIdleTaskStackSize = configMINIMAL_STACK_SIZE;
 }
 /*-----------------------------------------------------------*/
 
 /* configUSE_STATIC_ALLOCATION and configUSE_TIMERS are both set to 1, so the
 application must provide an implementation of vApplicationGetTimerTaskMemory()
 to provide the memory that is used by the Timer service task. */
-void vApplicationGetTimerTaskMemory( StaticTask_t **ppxTimerTaskTCBBuffer, StackType_t **ppxTimerTaskStackBuffer, uint32_t *pulTimerTaskStackSize )
+void vApplicationGetTimerTaskMemory( StaticTask_t **ppxTimerTaskTCBBuffer, StackType_t **ppxTimerTaskStackBuffer, configSTACK_DEPTH_TYPE *puxTimerTaskStackSize )
 {
     /* If the buffers to be provided to the Timer task are declared inside this
     function then they must be declared static - otherwise they will be allocated on
@@ -215,7 +232,7 @@ void vApplicationGetTimerTaskMemory( StaticTask_t **ppxTimerTaskTCBBuffer, Stack
     /* Pass out the size of the array pointed to by *ppxTimerTaskStackBuffer.
     Note that, as the array is necessarily of type StackType_t,
     configMINIMAL_STACK_SIZE is specified in words, not bytes. */
-    *pulTimerTaskStackSize = configTIMER_TASK_STACK_DEPTH;
+    *puxTimerTaskStackSize = configTIMER_TASK_STACK_DEPTH;
 }
 /*-----------------------------------------------------------*/
 
@@ -331,7 +348,7 @@ int main(void)
     SYS_Init();
 
     sysprintf("\n\nCPU @ %d Hz\n", SystemCoreClock);
-    sysprintf("FreeRTOS-SMP starting on %d cores\n", configNUM_CORES);
+    sysprintf("FreeRTOS-SMP starting on %d cores\n", configNUMBER_OF_CORES);
 
     /* Install SGI0 yield handler on core 0 as well. */
     IRQ_SetHandler( (IRQn_ID_t)SGI0_IRQn, prvSGI0YieldHandler );
