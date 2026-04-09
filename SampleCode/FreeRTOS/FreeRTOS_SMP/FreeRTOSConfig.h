@@ -205,9 +205,6 @@ void vConfigureTickInterrupt( void );
 void vClearTickInterrupt( void );
 #define configCLEAR_TICK_INTERRUPT() vClearTickInterrupt()
 
-/* Secondary core tick setup (called from main1). */
-void vConfigureTickInterruptCore1( void );
-
 /* The following constant describe the hardware, and are correct for the
 Nuvoton MA35D1 MPU. */
 #define configINTERRUPT_CONTROLLER_BASE_ADDRESS 		( GIC_DISTRIBUTOR_BASE )

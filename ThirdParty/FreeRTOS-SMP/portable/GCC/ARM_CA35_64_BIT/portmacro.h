@@ -160,10 +160,22 @@ static inline void portENABLE_INTERRUPTS( void )
 	__asm volatile ( "ISB SY" );									\
 }
 
-/* These macros do not globally disable/enable interrupts.  They do mask off
-interrupts that have a priority below configMAX_API_CALL_INTERRUPT_PRIORITY. */
-#define portENTER_CRITICAL()		vPortEnterCritical();
-#define portEXIT_CRITICAL()			vPortExitCritical();
+/* On SMP, critical sections must acquire the task + ISR spinlocks so that
+ * kernel data structures are protected across cores.  When
+ * portCRITICAL_NESTING_IN_TCB is 1 the kernel provides vTaskEnterCritical /
+ * vTaskExitCritical (in tasks.c) which implement the full SMP lock protocol
+ * and track nesting in the TCB.  The port's vPortEnterCritical only masks
+ * the GIC priority — it does NOT acquire SMP locks and must not be used
+ * as portENTER_CRITICAL in SMP mode. */
+#if ( portCRITICAL_NESTING_IN_TCB == 1 )
+	extern void vTaskEnterCritical( void );
+	extern void vTaskExitCritical( void );
+	#define portENTER_CRITICAL()		vTaskEnterCritical()
+	#define portEXIT_CRITICAL()			vTaskExitCritical()
+#else
+	#define portENTER_CRITICAL()		vPortEnterCritical();
+	#define portEXIT_CRITICAL()			vPortExitCritical();
+#endif
 #define portSET_INTERRUPT_MASK_FROM_ISR()		uxPortSetInterruptMask()
 #define portCLEAR_INTERRUPT_MASK_FROM_ISR(x)	vPortClearInterruptMask(x)
 

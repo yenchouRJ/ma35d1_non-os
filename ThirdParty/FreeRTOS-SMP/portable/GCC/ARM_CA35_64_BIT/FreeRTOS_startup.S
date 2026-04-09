@@ -90,7 +90,7 @@ _vector_table:
 	b	start64
 
 .org (VBAR + 0x80)
-	b	IRQInterruptHandler /* make INT workable before FreeRTOS starts */
+	b	IRQInterruptHandler /* exact IRQ handler entry before scheduler start */
 
 .org (VBAR + 0x100)
 	b	.

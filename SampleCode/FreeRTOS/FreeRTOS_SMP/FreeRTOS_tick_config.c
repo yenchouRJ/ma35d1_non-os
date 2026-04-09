@@ -28,8 +28,16 @@
  * @file     FreeRTOS_tick_config.c
  *
  * @brief    Timer interrupt for FreeRTOS tick using ARMv8 Generic Timer.
- *           The generic timer is a per-core PPI, so each core in an SMP
- *           configuration gets its own tick interrupt automatically.
+ *
+ *           Only core 0 runs the OS tick.  The FreeRTOS-SMP kernel's
+ *           xTaskIncrementTick() has no per-core gating — it unconditionally
+ *           increments xTickCount inside a critical section.
+ *           If both cores called FreeRTOS_Tick_Handler the tick would
+ *           advance at 2x the intended rate.
+ *
+ *           Core 0's tick handler already handles time-slicing for all
+ *           cores: the kernel calls prvYieldCore(x) (→ SGI) for any
+ *           remote core that needs a context switch.
  *
  * @copyright (C) 2023 Nuvoton Technology Corp. All rights reserved.
  *****************************************************************************/
@@ -55,13 +63,16 @@
  * vConfigureTickInterrupt() sets up the ARMv8 Non-Secure Physical Timer (CNTP)
  * to generate periodic interrupts at configTICK_RATE_HZ.
  *
- * The CNTP timer is a PPI (Private Peripheral Interrupt, IRQ 30) which means
- * each core has its own independent timer instance. This is ideal for SMP
- * because both cores receive tick interrupts independently.
+ * The CNTP timer is a PPI (Private Peripheral Interrupt, IRQ 30) — each core
+ * has its own independent instance.  However, only core 0 runs the tick
+ * because the SMP V202110.00 kernel's xTaskIncrementTick() unconditionally
+ * increments xTickCount (no per-core gating).  If both cores ran the tick
+ * handler, xTickCount would advance at 2x the intended rate.
  *
- * For SMP, this function is called once by core 0 during xPortStartScheduler().
- * Core 1 must also set up its own generic timer when it starts (since PPIs
- * are per-core). This is handled in the secondary core entry point.
+ * Core 0's tick handler already handles scheduling for all cores: when a
+ * remote core needs to yield, the kernel sends it an SGI via prvYieldCore().
+ *
+ * This function is called once by core 0 during xPortStartScheduler().
  */
 void vConfigureTickInterrupt( void )
 {
@@ -86,35 +97,6 @@ void vConfigureTickInterrupt( void )
     IRQ_Enable( (IRQn_ID_t)NonSecPhysicalTimer_IRQn );
 
     /* Enable the timer (CNTP_CTL_EL0.ENABLE = 1, IMASK = 0). */
-    EL0_SetControl( 1U );
-}
-/*-----------------------------------------------------------*/
-
-/*
- * vConfigureTickInterruptCore1() should be called by the secondary core
- * to set up its own generic timer for tick interrupts.
- */
-void vConfigureTickInterruptCore1( void )
-{
-    extern void FreeRTOS_Tick_Handler( void );
-
-    /* Disable the timer while configuring. */
-    EL0_SetControl( 0 );
-
-    /* Set the compare value for the next tick. */
-    EL0_SetPhysicalCompareValue( EL0_GetCurrentPhysicalValue() + configGENERIC_TIMER_LOAD_VALUE );
-
-    /* The priority must be the lowest possible for FreeRTOS tick. */
-    IRQ_SetPriority( (IRQn_ID_t)NonSecPhysicalTimer_IRQn,
-                     portLOWEST_USABLE_INTERRUPT_PRIORITY << portPRIORITY_SHIFT );
-
-    /* Install FreeRTOS_Tick_Handler as the interrupt handler. */
-    IRQ_SetHandler( (IRQn_ID_t)NonSecPhysicalTimer_IRQn, FreeRTOS_Tick_Handler );
-
-    /* Enable the timer interrupt. */
-    IRQ_Enable( (IRQn_ID_t)NonSecPhysicalTimer_IRQn );
-
-    /* Enable the timer. */
     EL0_SetControl( 1U );
 }
 /*-----------------------------------------------------------*/

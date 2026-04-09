@@ -71,9 +71,6 @@ extern void * volatile pxCurrentTCBs[];
  * the first task context for the calling core (core-aware via MPIDR). */
 extern void vPortRestoreTaskContext( void );
 
-/* Secondary core tick configuration from FreeRTOS_tick_config.c. */
-extern void vConfigureTickInterruptCore1( void );
-
 /* BSP: Boot secondary core (writes entry to CA35WRBADR1 + SEV). */
 extern void RunCore1( void );
 
@@ -247,19 +244,21 @@ void vMainAssertCalled( const char *pcFileName, uint32_t ulLineNumber )
  *   - Enabled interrupts
  *
  * What we do here:
- *   1. Configure the per-core generic timer for tick interrupts (PPI 30)
- *   2. Install the SGI0 yield handler on this core's GIC
- *   3. Wait for core 0 to start the scheduler (pxCurrentTCBs[1] populated)
- *   4. Enter the FreeRTOS scheduler via vPortRestoreTaskContext()
+ *   1. Install the SGI0 yield handler on this core's GIC
+ *   2. Wait for core 0 to start the scheduler (pxCurrentTCBs[1] populated)
+ *   3. Enter the FreeRTOS scheduler via vPortRestoreTaskContext()
  *      (which installs the FreeRTOS vector table and ERET into the
  *       first task assigned to this core)
+ *
+ * NOTE: Core 1 does NOT set up a tick timer.  Only core 0 runs the OS
+ *       tick because the SMP V202110.00 kernel's xTaskIncrementTick()
+ *       unconditionally increments xTickCount — running it on both cores
+ *       would advance the tick at 2x speed.  Core 0 handles time-slicing
+ *       for all cores via SGI (prvYieldCore).
  */
 void main1( void )
 {
-	/* 1. Set up the generic timer tick for core 1. */
-	vConfigureTickInterruptCore1();
-
-	/* 2. Install the SGI0 yield handler on this core.
+	/* 1. Install the SGI0 yield handler on this core.
 	 *    The GIC CPU interface was already initialised by SystemInit1().
 	 *    IRQ_SetHandler / IRQ_Enable work on the calling core's PPI/SGI. */
 	IRQ_SetHandler( (IRQn_ID_t)SGI0_IRQn, prvSGI0YieldHandler );
@@ -267,7 +266,7 @@ void main1( void )
 	                 configMAX_API_CALL_INTERRUPT_PRIORITY << portPRIORITY_SHIFT );
 	IRQ_Enable( (IRQn_ID_t)SGI0_IRQn );
 
-	/* 3. Spin until the SMP scheduler has assigned a task to this core.
+	/* 2. Spin until the SMP scheduler has assigned a task to this core.
 	 *    vTaskStartScheduler() on core 0 creates idle tasks for all cores
 	 *    and populates pxCurrentTCBs[] before calling vPortRestoreTaskContext().
 	 *    We must wait until pxCurrentTCBs[1] is non-NULL to avoid entering
@@ -281,7 +280,7 @@ void main1( void )
 	__asm volatile ( "DSB SY" ::: "memory" );
 	__asm volatile ( "ISB SY" );
 
-	/* 4. Enter the scheduler.  vPortRestoreTaskContext() installs the
+	/* 3. Enter the scheduler.  vPortRestoreTaskContext() installs the
 	 *    FreeRTOS vector table (VBAR_EL3) and ERETs into the task
 	 *    stored in pxCurrentTCBs[1].  This function never returns. */
 	vPortRestoreTaskContext();
