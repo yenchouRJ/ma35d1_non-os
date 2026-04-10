@@ -99,10 +99,6 @@ extern uint32_t SystemCoreClock;
 
 #define configCPU_CLOCK_HZ              ( SystemCoreClock )
 
-/* Port-optimised task selection uses CLZ-based ready bitmap which
- * is not compatible with the SMP scheduler.  Must be 0 for SMP. */
-#define configUSE_PORT_OPTIMISED_TASK_SELECTION	0
-
 #define configUSE_TICKLESS_IDLE					0
 #define configTICK_RATE_HZ              ( ( TickType_t ) 1000 )
 #define configUSE_PREEMPTION            1
@@ -114,6 +110,9 @@ extern uint32_t SystemCoreClock;
 #define configMAX_TASK_NAME_LEN         ( 16 )
 
 #define configUSE_TRACE_FACILITY        1
+#define configUSE_PORT_OPTIMISED_TASK_SELECTION	0
+#define portCRITICAL_NESTING_IN_TCB             1
+
 /* Use the new configTICK_TYPE_WIDTH_IN_BITS instead of the deprecated
 configUSE_16_BIT_TICKS.  Our portmacro.h defines TickType_t as uint64_t,
 so we select 64-bit tick width to match. */
@@ -132,10 +131,6 @@ so we select 64-bit tick width to match. */
 
 #define configSUPPORT_STATIC_ALLOCATION			1
 #define configSUPPORT_DYNAMIC_ALLOCATION		1 /* Defaults to 1 anyway. */
-
-/* Co-routine definitions. */
-//#define configUSE_CO_ROUTINES       0
-//#define configMAX_CO_ROUTINE_PRIORITIES ( 2 )
 
 /* Software timer definitions. */
 #define configUSE_TIMERS                1
@@ -170,8 +165,6 @@ is set to 1. */
 #define configGENERATE_RUN_TIME_STATS 0
 #define portCONFIGURE_TIMER_FOR_RUN_TIME_STATS()
 #define portGET_RUN_TIME_COUNTER_VALUE()
-
-#define portCRITICAL_NESTING_IN_TCB             1
 
 /* The size of the global output buffer that is available for use when there
 are multiple command interpreters running at once (for example, one on a UART

@@ -134,5 +134,11 @@ void vApplicationIRQHandler( uint32_t ulICCIAR )
     handler = IRQ_GetHandler(num);
     if(handler != 0)
         (*handler)();
-    IRQ_EndOfInterrupt(num);
+
+    /* NOTE: Do NOT call IRQ_EndOfInterrupt() here.
+     * FreeRTOS_IRQ_Handler in portASM.S writes the ICCIAR value to
+     * ICCEOIR after this function returns (the standard FreeRTOS
+     * Cortex-A pattern).  Calling IRQ_EndOfInterrupt() here would
+     * result in a double EOI which can cause GICv2 priority-drop
+     * issues. */
 }

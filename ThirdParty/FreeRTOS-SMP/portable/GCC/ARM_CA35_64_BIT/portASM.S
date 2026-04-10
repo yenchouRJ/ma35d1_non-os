@@ -28,16 +28,15 @@
 	.text
 
 	/* Variables and functions. */
-	.extern ullMaxAPIPriorityMask
 	.extern pxCurrentTCBs
 	.extern vTaskSwitchContext
 	.extern vApplicationIRQHandler
 	.extern ullPortInterruptNesting
 	.extern ullPortTaskHasFPUContext
-	.extern ullCriticalNesting
 	.extern ullPortYieldRequired
 	.extern ullICCEOIR
 	.extern ullICCIAR
+	.extern ullICCPMR
 	.extern _freertos_vector_table
 
 	.global FreeRTOS_IRQ_Handler
@@ -50,7 +49,7 @@
  */
 .macro portGET_CORE_ID Xdst
 	MRS		\Xdst, MPIDR_EL1
-	AND		\Xdst, \Xdst, #0x3
+	AND		\Xdst, \Xdst, #0xFF
 .endm
 
 
@@ -77,13 +76,12 @@
 	STP 	X28, X29, [SP, #-0x10]!
 	STP 	X30, XZR, [SP, #-0x10]!
 
-	/* Save the SPSR. */
+	/* Save the SPSR and ELR. */
 #if defined( GUEST )
 	MRS		X3, SPSR_EL1
 	MRS		X2, ELR_EL1
 #else
 	MRS		X3, SPSR_EL3
-	/* Save the ELR. */
 	MRS		X2, ELR_EL3
 #endif
 
@@ -91,10 +89,6 @@
 
 	/* Get core ID for indexing per-core arrays. */
 	portGET_CORE_ID X4
-
-	/* Save the critical section nesting depth. */
-	LDR		X0, ullCriticalNestingConst
-	LDR		X3, [X0, X4, LSL #3]		/* ullCriticalNesting[coreID] */
 
 	/* Save the FPU context indicator. */
 	LDR		X0, ullPortTaskHasFPUContextConst
@@ -126,8 +120,11 @@
 	STP		X7, X8, [SP, #-0x10]!
 
 1:
-	/* Store the critical nesting count and FPU context indicator. */
-	STP 	X2, X3, [SP, #-0x10]!
+	/* Store the FPU context indicator on the stack.
+	 * Critical nesting is tracked in the TCB by the SMP kernel
+	 * (portCRITICAL_NESTING_IN_TCB == 1), so we do not save it here.
+	 * We push X2 (FPU flag) paired with XZR for 16-byte alignment. */
+	STP 	X2, XZR, [SP, #-0x10]!
 
 	/* Save SP into pxCurrentTCBs[coreID]->pxTopOfStack */
 	LDR 	X0, pxCurrentTCBsConst
@@ -156,25 +153,21 @@
 	LDR		X0, [X1]
 	MOV		SP, X0
 
-	LDP 	X2, X3, [SP], #0x10  /* Critical nesting and FPU context. */
+	/* Restore the FPU context indicator.
+	 * Critical nesting is managed in the TCB by the SMP kernel, not here. */
+	LDP 	X2, XZR, [SP], #0x10  /* FPU context flag (+ padding). */
 
-	/* Set the PMR register to be correct for the current critical nesting
-	depth. */
-	LDR		X0, ullCriticalNestingConst	/* X0 holds the address of ullCriticalNesting array. */
-	MOV		X1, #255					/* X1 holds the unmask value. */
-	LDR		X5, ullICCPMRConst			/* X5 holds the address of the ICCPMR constant. */
-	CMP		X3, #0
-	LDR		X6, [X5] 					/* X6 holds the address of the ICCPMR register. */
-	B.EQ	1f
-	LDR		X7, ullMaxAPIPriorityMaskConst
-	LDR		X1, [X7]					/* X1 holds the mask value. */
-1:
-	STR		W1, [X6]					/* Write the mask value to ICCPMR. */
-	DSB 	SY							/* _RB_Barriers probably not required here. */
+	/* Always unmask all GIC interrupt priorities on context restore.
+	 * The SMP kernel manages critical sections via portDISABLE_INTERRUPTS()
+	 * (DAIF) and the spinlocks; the ICCPMR should be open. */
+	LDR		X5, ullICCPMRConst
+	LDR		X6, [X5]					/* X6 = address of ICCPMR register. */
+	MOV		W1, #255
+	STR		W1, [X6]					/* Write unmask value to ICCPMR. */
+	DSB 	SY
 	ISB 	SY
-	STR		X3, [X0, X4, LSL #3]		/* Restore the task's critical nesting count (per-core). */
 
-	/* Restore the FPU context indicator. */
+	/* Restore the FPU context indicator to the per-core variable. */
 	LDR		X0, ullPortTaskHasFPUContextConst
 	STR		X2, [X0, X4, LSL #3]		/* per-core */
 
@@ -213,7 +206,7 @@
 	MSR		ELR_EL1, X2
 #else
 	/* Restore the SPSR. */
-	MSR		SPSR_EL3, X3 /*_RB_ Assumes started in EL3. */
+	MSR		SPSR_EL3, X3
 	/* Restore the ELR. */
 	MSR		ELR_EL3, X2
 #endif
@@ -235,7 +228,7 @@
 	LDP 	X2, X3, [SP], #0x10
 	LDP 	X0, X1, [SP], #0x10
 
-	/* Switch to use the ELx stack pointer.  _RB_ Might not be required. */
+	/* Switch to use the ELx stack pointer. */
 	MSR 	SPSEL, #1
 
 	ERET
@@ -364,9 +357,9 @@ FreeRTOS_IRQ_Handler:
 	LDR		X4, [X4]
 	STR		W0, [X4]
 
-	/* Restore the critical nesting count. */
+	/* Restore the interrupt nesting count. */
 	LDP		X1, X5, [SP], #0x10
-	STR		X1, [X5, X19, LSL #3]	/* Restore per-core nesting count. */
+	STR		X1, [X5, X19, LSL #3]	/* Restore per-core interrupt nesting count. */
 
 	/* Has interrupt nesting unwound? */
 	CMP		X1, #0
@@ -445,11 +438,9 @@ Exit_IRQ_No_Context_Switch:
 
 .align 8
 pxCurrentTCBsConst: .dword pxCurrentTCBs
-ullCriticalNestingConst: .dword ullCriticalNesting
 ullPortTaskHasFPUContextConst: .dword ullPortTaskHasFPUContext
 
 ullICCPMRConst: .dword ullICCPMR
-ullMaxAPIPriorityMaskConst: .dword ullMaxAPIPriorityMask
 vApplicationIRQHandlerConst: .word vApplicationIRQHandler
 ullPortInterruptNestingConst: .dword ullPortInterruptNesting
 ullPortYieldRequiredConst: .dword ullPortYieldRequired

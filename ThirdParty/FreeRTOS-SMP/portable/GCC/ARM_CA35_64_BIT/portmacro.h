@@ -81,7 +81,7 @@ static inline BaseType_t xPortGetCoreID( void )
 {
 	uint64_t mpidr;
 	__asm volatile ( "MRS %0, MPIDR_EL1" : "=r" ( mpidr ) ); // cpuid()
-	return ( BaseType_t ) ( mpidr & 0x3UL );
+	return ( BaseType_t ) ( mpidr & 0xFFUL );
 }
 #define portGET_CORE_ID()	xPortGetCoreID()
 
@@ -131,11 +131,8 @@ extern uint64_t ullPortYieldRequired[];				\
  * Critical section control
  *----------------------------------------------------------*/
 
-extern void vPortEnterCritical( void );
-extern void vPortExitCritical( void );
 extern UBaseType_t uxPortSetInterruptMask( void );
 extern void vPortClearInterruptMask( UBaseType_t uxNewMaskValue );
-extern void vPortInstallFreeRTOSVectorTable( void );
 
 /*
  * SMP-compatible portDISABLE_INTERRUPTS: saves and returns the DAIF state
@@ -161,26 +158,18 @@ static inline void portENABLE_INTERRUPTS( void )
 #define portRESTORE_INTERRUPTS( ulState )							\
 {																	\
 	__asm volatile ( "MSR DAIF, %0" :: "r" ( ulState ) : "memory" );\
-	__asm volatile ( "DSB SY" );									\
-	__asm volatile ( "ISB SY" );									\
+	__asm volatile ( "ISB" ::: "memory" );							\
 }
 
-/* On SMP, critical sections must acquire the task + ISR spinlocks so that
- * kernel data structures are protected across cores.  When
- * portCRITICAL_NESTING_IN_TCB is 1 the kernel provides vTaskEnterCritical /
- * vTaskExitCritical (in tasks.c) which implement the full SMP lock protocol
- * and track nesting in the TCB.  The port's vPortEnterCritical only masks
- * the GIC priority — it does NOT acquire SMP locks and must not be used
- * as portENTER_CRITICAL in SMP mode. */
-#if ( portCRITICAL_NESTING_IN_TCB == 1 )
-	extern void vTaskEnterCritical( void );
-	extern void vTaskExitCritical( void );
-	#define portENTER_CRITICAL()		vTaskEnterCritical()
-	#define portEXIT_CRITICAL()			vTaskExitCritical()
-#else
-	#define portENTER_CRITICAL()		vPortEnterCritical();
-	#define portEXIT_CRITICAL()			vPortExitCritical();
-#endif
+/* On SMP the kernel provides vTaskEnterCritical / vTaskExitCritical
+ * (in tasks.c) which implement the full SMP lock protocol and track
+ * nesting in the TCB (portCRITICAL_NESTING_IN_TCB == 1).  The port's
+ * vPortEnterCritical only masks the GIC priority — it does NOT acquire
+ * SMP locks and must not be used as portENTER_CRITICAL. */
+extern void vTaskEnterCritical( void );
+extern void vTaskExitCritical( void );
+#define portENTER_CRITICAL()		vTaskEnterCritical()
+#define portEXIT_CRITICAL()			vTaskExitCritical()
 #define portSET_INTERRUPT_MASK_FROM_ISR()		uxPortSetInterruptMask()
 #define portCLEAR_INTERRUPT_MASK_FROM_ISR(x)	vPortClearInterruptMask(x)
 

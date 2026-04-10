@@ -82,10 +82,6 @@ portmacro.h. */
 	#define configCLEAR_TICK_INTERRUPT()
 #endif
 
-/* A critical section is exited when the critical section nesting count reaches
-this value. */
-#define portNO_CRITICAL_NESTING			( ( size_t ) 0 )
-
 /* In all GICs 255 can be written to the priority mask register to unmask all
 (but the lowest) interrupt priority. */
 #define portUNMASK_VALUE				( 0xFFUL )
@@ -156,13 +152,6 @@ extern void vPortRestoreTaskContext( void );
 
 /*-----------------------------------------------------------*/
 
-/* A variable is used to keep track of the critical section nesting.  This
-variable has to be stored as part of the task context and must be initialised to
-a non zero value to ensure interrupts don't inadvertently become unmasked before
-the scheduler starts.  As it is stored as part of the task context it will
-automatically be set to 0 when the first task is started. */
-volatile uint64_t ullCriticalNesting[ configNUMBER_OF_CORES ] = { [ 0 ... ( configNUMBER_OF_CORES - 1 ) ] = 9999ULL };
-
 /* Saved as part of the task context.  If ullPortTaskHasFPUContext is non-zero
 then floating point context must be saved and restored for the task. */
 uint64_t ullPortTaskHasFPUContext[ configNUMBER_OF_CORES ] = { 0 };
@@ -178,7 +167,6 @@ uint64_t ullPortInterruptNesting[ configNUMBER_OF_CORES ] = { 0 };
 __attribute__(( used )) const uint64_t ullICCEOIR = portICCEOIR_END_OF_INTERRUPT_REGISTER_ADDRESS;
 __attribute__(( used )) const uint64_t ullICCIAR = portICCIAR_INTERRUPT_ACKNOWLEDGE_REGISTER_ADDRESS;
 __attribute__(( used )) const uint64_t ullICCPMR = portICCPMR_PRIORITY_MASK_REGISTER_ADDRESS;
-__attribute__(( used )) const uint64_t ullMaxAPIPriorityMask = ( configMAX_API_CALL_INTERRUPT_PRIORITY << portPRIORITY_SHIFT );
 
 /* SMP spinlocks for task-level and ISR-level critical sections.
  * These use the BSP's cpu_spin_lock/cpu_spin_unlock which implement
@@ -269,14 +257,12 @@ StackType_t *pxPortInitialiseStack( StackType_t *pxTopOfStack, TaskFunction_t px
 	*pxTopOfStack = ( StackType_t ) pxCode; /* Exception return address. */
 	pxTopOfStack--;
 
-	/* The task will start with a critical nesting count of 0 as interrupts are
-	enabled. */
-	*pxTopOfStack = portNO_CRITICAL_NESTING;
-	pxTopOfStack--;
-
 	/* The task will start without a floating point context.  A task that uses
 	the floating point hardware must call vPortTaskUsesFPU() before executing
-	any floating point instructions. */
+	any floating point instructions.  Paired with a zero padding slot to match
+	the STP/LDP pair in portSAVE_CONTEXT/portRESTORE_CONTEXT. */
+	*pxTopOfStack = ( StackType_t ) 0x00;	/* Padding (XZR in the STP pair). */
+	pxTopOfStack--;
 	*pxTopOfStack = portNO_FLOATING_POINT_CONTEXT;
 
 	return pxTopOfStack;
@@ -321,7 +307,7 @@ uint32_t ulAPSR;
 		value. */
 		*pucFirstUserPriorityRegister = ulOriginalPriority;
 	}
-	#endif /* conifgASSERT_DEFINED */
+	#endif /* configASSERT_DEFINED */
 
 
 	/* At the time of writing, the BSP only supports EL3. */
@@ -366,55 +352,10 @@ void vPortEndScheduler( void )
 {
 	/* Not implemented in ports where there is nothing to return to.
 	Artificially force an assert. */
-	configASSERT( ullCriticalNesting[ portGET_CORE_ID() ] == 1000ULL );
+	configASSERT( pdFALSE );
 }
 /*-----------------------------------------------------------*/
 
-void vPortEnterCritical( void )
-{
-	BaseType_t xCoreID;
-
-	/* Mask interrupts up to the max syscall interrupt priority. */
-	uxPortSetInterruptMask();
-
-	/* Now interrupts are disabled ullCriticalNesting can be accessed
-	directly.  Increment ullCriticalNesting to keep a count of how many times
-	portENTER_CRITICAL() has been called. */
-	xCoreID = portGET_CORE_ID();
-	ullCriticalNesting[ xCoreID ]++;
-
-	/* This is not the interrupt safe version of the enter critical function so
-	assert() if it is being called from an interrupt context.  Only API
-	functions that end in "FromISR" can be used in an interrupt.  Only assert if
-	the critical nesting count is 1 to protect against recursive calls if the
-	assert function also uses a critical section. */
-	if( ullCriticalNesting[ xCoreID ] == 1ULL )
-	{
-		configASSERT( ullPortInterruptNesting[ xCoreID ] == 0 );
-	}
-}
-/*-----------------------------------------------------------*/
-
-void vPortExitCritical( void )
-{
-	BaseType_t xCoreID = portGET_CORE_ID();
-
-	if( ullCriticalNesting[ xCoreID ] > portNO_CRITICAL_NESTING )
-	{
-		/* Decrement the nesting count as the critical section is being
-		exited. */
-		ullCriticalNesting[ xCoreID ]--;
-
-		/* If the nesting level has reached zero then all interrupt
-		priorities must be re-enabled. */
-		if( ullCriticalNesting[ xCoreID ] == portNO_CRITICAL_NESTING )
-		{
-			/* Critical nesting has reached zero so all interrupt priorities
-			should be unmasked. */
-			portUNMASK_GIC_PRIORITY();
-		}
-	}
-}
 /*-----------------------------------------------------------*/
 
 void FreeRTOS_Tick_Handler( void )
