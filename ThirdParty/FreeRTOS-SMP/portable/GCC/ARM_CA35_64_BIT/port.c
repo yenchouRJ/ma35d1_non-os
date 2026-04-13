@@ -526,3 +526,20 @@ void vPortYieldCore( BaseType_t xCoreID )
 	GIC_SendSGI( ( IRQn_Type ) portSGI_YIELD, ( uint32_t ) ( 1UL << xCoreID ), 0 );
 }
 /*-----------------------------------------------------------*/
+
+/*
+ * Weak default for vApplicationFPUSafeIRQHandler.
+ *
+ * This is called by the weak vApplicationIRQHandler in portASM.S when the
+ * application does not provide a strong vApplicationIRQHandler.  If the
+ * application provides vApplicationFPUSafeIRQHandler (strong), this weak
+ * default is overridden by the linker.
+ *
+ * The weak default does nothing — this ensures a safe no-op if neither
+ * handler is provided by the application (though in practice the
+ * application MUST provide one of the two or no IRQs will be serviced).
+ */
+void __attribute__(( weak )) vApplicationFPUSafeIRQHandler( uint32_t ulICCIAR )
+{
+	( void ) ulICCIAR;
+}
