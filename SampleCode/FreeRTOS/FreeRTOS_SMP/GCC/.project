@@ -55,11 +55,6 @@
 			<locationURI>PARENT-4-PROJECT_LOC/Library/Arch/Core_A/Source</locationURI>
 		</link>
 		<link>
-			<name>FreeRTOS/Common</name>
-			<type>2</type>
-			<locationURI>PARENT-4-PROJECT_LOC/ThirdParty/FreeRTOS-Kernel/common</locationURI>
-		</link>
-		<link>
 			<name>FreeRTOS/Kernel</name>
 			<type>2</type>
 			<locationURI>PARENT-4-PROJECT_LOC/ThirdParty/FreeRTOS-SMP</locationURI>
@@ -75,34 +70,19 @@
 			<locationURI>PARENT-1-PROJECT_LOC/FreeRTOS_tick_config.c</locationURI>
 		</link>
 		<link>
-			<name>User/IntQueueTimer.c</name>
-			<type>1</type>
-			<locationURI>PARENT-1-PROJECT_LOC/IntQueueTimer.c</locationURI>
-		</link>
-		<link>
 			<name>User/main.c</name>
 			<type>1</type>
 			<locationURI>PARENT-1-PROJECT_LOC/main.c</locationURI>
 		</link>
 		<link>
-			<name>User/main_blinky.c</name>
-			<type>1</type>
-			<locationURI>PARENT-1-PROJECT_LOC/main_blinky.c</locationURI>
-		</link>
-		<link>
-			<name>User/main_full.c</name>
-			<type>1</type>
-			<locationURI>PARENT-1-PROJECT_LOC/main_full.c</locationURI>
-		</link>
-		<link>
-			<name>User/reg_test.S</name>
-			<type>1</type>
-			<locationURI>PARENT-1-PROJECT_LOC/reg_test.S</locationURI>
-		</link>
-		<link>
 			<name>User/system_MA35D1.c</name>
 			<type>1</type>
 			<locationURI>PARENT-1-PROJECT_LOC/system_MA35D1.c</locationURI>
+		</link>
+		<link>
+			<name>User/tasking_demo.c</name>
+			<type>1</type>
+			<locationURI>PARENT-1-PROJECT_LOC/tasking_demo.c</locationURI>
 		</link>
 	</linkedResources>
 	<filteredResources>
@@ -197,147 +177,21 @@
 			</matcher>
 		</filter>
 		<filter>
-			<id>1685961964019</id>
-			<name>FreeRTOS/Common/Minimal</name>
-			<type>5</type>
-			<matcher>
-				<id>org.eclipse.ui.ide.multiFilter</id>
-				<arguments>1.0-name-matches-false-false-flop.c</arguments>
-			</matcher>
-		</filter>
-		<filter>
-			<id>1685961964026</id>
-			<name>FreeRTOS/Common/Minimal</name>
-			<type>5</type>
-			<matcher>
-				<id>org.eclipse.ui.ide.multiFilter</id>
-				<arguments>1.0-name-matches-false-false-semtest.c</arguments>
-			</matcher>
-		</filter>
-		<filter>
-			<id>1685961964033</id>
-			<name>FreeRTOS/Common/Minimal</name>
-			<type>5</type>
-			<matcher>
-				<id>org.eclipse.ui.ide.multiFilter</id>
-				<arguments>1.0-name-matches-false-false-dynamic.c</arguments>
-			</matcher>
-		</filter>
-		<filter>
-			<id>1685961964039</id>
-			<name>FreeRTOS/Common/Minimal</name>
-			<type>5</type>
-			<matcher>
-				<id>org.eclipse.ui.ide.multiFilter</id>
-				<arguments>1.0-name-matches-false-false-blocktim.c</arguments>
-			</matcher>
-		</filter>
-		<filter>
-			<id>1685961964046</id>
-			<name>FreeRTOS/Common/Minimal</name>
-			<type>5</type>
-			<matcher>
-				<id>org.eclipse.ui.ide.multiFilter</id>
-				<arguments>1.0-name-matches-false-false-countsem.c</arguments>
-			</matcher>
-		</filter>
-		<filter>
-			<id>1685961964053</id>
-			<name>FreeRTOS/Common/Minimal</name>
-			<type>5</type>
-			<matcher>
-				<id>org.eclipse.ui.ide.multiFilter</id>
-				<arguments>1.0-name-matches-false-false-GenQTest.c</arguments>
-			</matcher>
-		</filter>
-		<filter>
-			<id>1685961964059</id>
-			<name>FreeRTOS/Common/Minimal</name>
-			<type>5</type>
-			<matcher>
-				<id>org.eclipse.ui.ide.multiFilter</id>
-				<arguments>1.0-name-matches-false-false-recmutex.c</arguments>
-			</matcher>
-		</filter>
-		<filter>
-			<id>1685961964066</id>
-			<name>FreeRTOS/Common/Minimal</name>
-			<type>5</type>
-			<matcher>
-				<id>org.eclipse.ui.ide.multiFilter</id>
-				<arguments>1.0-name-matches-false-false-IntQueue.c</arguments>
-			</matcher>
-		</filter>
-		<filter>
-			<id>1685961964073</id>
-			<name>FreeRTOS/Common/Minimal</name>
-			<type>5</type>
-			<matcher>
-				<id>org.eclipse.ui.ide.multiFilter</id>
-				<arguments>1.0-name-matches-false-false-EventGroupsDemo.c</arguments>
-			</matcher>
-		</filter>
-		<filter>
-			<id>1685961964080</id>
-			<name>FreeRTOS/Common/Minimal</name>
-			<type>5</type>
-			<matcher>
-				<id>org.eclipse.ui.ide.multiFilter</id>
-				<arguments>1.0-name-matches-false-false-TaskNotify.c</arguments>
-			</matcher>
-		</filter>
-		<filter>
-			<id>1685961964087</id>
-			<name>FreeRTOS/Common/Minimal</name>
-			<type>5</type>
-			<matcher>
-				<id>org.eclipse.ui.ide.multiFilter</id>
-				<arguments>1.0-name-matches-false-false-IntSemTest.c</arguments>
-			</matcher>
-		</filter>
-		<filter>
-			<id>1685961964095</id>
-			<name>FreeRTOS/Common/Minimal</name>
-			<type>5</type>
-			<matcher>
-				<id>org.eclipse.ui.ide.multiFilter</id>
-				<arguments>1.0-name-matches-false-false-StaticAllocation.c</arguments>
-			</matcher>
-		</filter>
-		<filter>
-			<id>1685961964106</id>
-			<name>FreeRTOS/Common/Minimal</name>
-			<type>5</type>
-			<matcher>
-				<id>org.eclipse.ui.ide.multiFilter</id>
-				<arguments>1.0-name-matches-false-false-AbortDelay.c</arguments>
-			</matcher>
-		</filter>
-		<filter>
-			<id>1685961964114</id>
-			<name>FreeRTOS/Common/Minimal</name>
-			<type>5</type>
-			<matcher>
-				<id>org.eclipse.ui.ide.multiFilter</id>
-				<arguments>1.0-name-matches-false-false-QueueOverwrite.c</arguments>
-			</matcher>
-		</filter>
-		<filter>
-			<id>1685961964121</id>
-			<name>FreeRTOS/Common/Minimal</name>
-			<type>5</type>
-			<matcher>
-				<id>org.eclipse.ui.ide.multiFilter</id>
-				<arguments>1.0-name-matches-false-false-TimerDemo.c</arguments>
-			</matcher>
-		</filter>
-		<filter>
-			<id>1685686896070</id>
+			<id>1776068525267</id>
 			<name>FreeRTOS/Kernel/portable</name>
 			<type>10</type>
 			<matcher>
 				<id>org.eclipse.ui.ide.multiFilter</id>
 				<arguments>1.0-name-matches-false-false-RVDS</arguments>
+			</matcher>
+		</filter>
+		<filter>
+			<id>1776068525276</id>
+			<name>FreeRTOS/Kernel/portable</name>
+			<type>10</type>
+			<matcher>
+				<id>org.eclipse.ui.ide.multiFilter</id>
+				<arguments>1.0-name-matches-false-false-Common</arguments>
 			</matcher>
 		</filter>
 		<filter>

@@ -168,11 +168,86 @@ __attribute__(( used )) const uint64_t ullICCEOIR = portICCEOIR_END_OF_INTERRUPT
 __attribute__(( used )) const uint64_t ullICCIAR = portICCIAR_INTERRUPT_ACKNOWLEDGE_REGISTER_ADDRESS;
 __attribute__(( used )) const uint64_t ullICCPMR = portICCPMR_PRIORITY_MASK_REGISTER_ADDRESS;
 
-/* SMP spinlocks for task-level and ISR-level critical sections.
- * These use the BSP's cpu_spin_lock/cpu_spin_unlock which implement
- * proper ARMv8 exclusive access (LDAXR/STXR/STLR). */
-static unsigned int ulTaskLock = 0;
-static unsigned int ulISRLock = 0;
+/* SMP recursive spinlocks for task-level and ISR-level critical sections.
+ *
+ * The FreeRTOS SMP kernel expects the port lock functions to be RECURSIVE
+ * (re-entrant from the same core).  For example, vTaskSuspendAll() acquires
+ * the task lock, then xTaskResumeAll() calls taskENTER_CRITICAL() which
+ * tries to acquire the task lock again on the same core.  With a plain
+ * non-reentrant spinlock this would deadlock.
+ *
+ * We track per-lock ownership (which core holds the lock) and a recursion
+ * count.  When the owning core re-acquires, we simply bump the count.
+ * On release, we decrement the count and only truly unlock the spinlock
+ * when the count reaches zero.
+ *
+ * This matches the ARM_CR82 SMP reference port's vPortRecursiveLock()
+ * pattern, adapted to use the BSP's cpu_spin_lock/cpu_spin_unlock
+ * (ARMv8 LDAXR/STXR/STLR) as the underlying primitive.
+ */
+
+/* Lock indices are defined in portmacro.h as eLockType_t:
+ *   eLockISR = 0, eLockTask = 1, eLockCount = 2 */
+
+/* Per-lock state: the raw spinlock word, recursion count, and owning core.
+ * ulOwner uses portMAX_CORE_ID_SENTINEL (0xFF) to mean "unowned". */
+#define portLOCK_UNOWNED		( ( uint32_t ) 0xFFU )
+
+static unsigned int ulSpinLock[ eLockCount ] = { 0, 0 };
+static uint32_t ulRecursionCount[ eLockCount ] = { 0, 0 };
+static uint32_t ulOwner[ eLockCount ] = { portLOCK_UNOWNED, portLOCK_UNOWNED };
+
+/*
+ * vPortRecursiveLock - acquire or release a recursive SMP spinlock.
+ *
+ * @param ulCoreID   The calling core (0 or 1).
+ * @param eLock      Which lock (eLockISR or eLockTask).
+ * @param xAcquire   pdTRUE to acquire, pdFALSE to release.
+ */
+void vPortRecursiveLock( uint32_t ulCoreID,
+                         eLockType_t eLock,
+                         BaseType_t xAcquire )
+{
+	configASSERT( eLock < eLockCount );
+
+	if( xAcquire != pdFALSE )
+	{
+		/* Acquire path. */
+		if( ulOwner[ eLock ] == ulCoreID )
+		{
+			/* Already owned by this core — just bump the recursion count. */
+			configASSERT( ulRecursionCount[ eLock ] > 0 );
+			ulRecursionCount[ eLock ]++;
+		}
+		else
+		{
+			/* Not owned by this core — spin until we get the raw lock.
+			 * cpu_spin_lock is a non-reentrant LDAXR/STXR spinlock with
+			 * acquire semantics.  We only reach here when this core does
+			 * NOT already hold the lock, so no self-deadlock. */
+			cpu_spin_lock( &ulSpinLock[ eLock ] );
+
+			/* We now own the lock.  Set up the recursive state. */
+			configASSERT( ulRecursionCount[ eLock ] == 0 );
+			ulRecursionCount[ eLock ] = 1;
+			ulOwner[ eLock ] = ulCoreID;
+		}
+	}
+	else
+	{
+		/* Release path. */
+		configASSERT( ulOwner[ eLock ] == ulCoreID );
+		configASSERT( ulRecursionCount[ eLock ] > 0 );
+
+		ulRecursionCount[ eLock ]--;
+
+		if( ulRecursionCount[ eLock ] == 0 )
+		{
+			ulOwner[ eLock ] = portLOCK_UNOWNED;
+			cpu_spin_unlock( &ulSpinLock[ eLock ] );
+		}
+	}
+}
 
 /*-----------------------------------------------------------*/
 
@@ -392,11 +467,25 @@ void FreeRTOS_Tick_Handler( void )
 	configCLEAR_TICK_INTERRUPT();
 	portENABLE_INTERRUPTS();
 
+	/* SMP: Acquire the ISR critical section before calling xTaskIncrementTick().
+	 *
+	 * The SMP kernel's xTaskIncrementTick() may call prvYieldForTask() which
+	 * asserts portGET_CRITICAL_NESTING_COUNT(xCoreID) > 0.  The ISR-level
+	 * critical section (portENTER_CRITICAL_FROM_ISR) acquires the ISR spinlock
+	 * and increments the nesting count in the current TCB, satisfying this
+	 * requirement and providing mutual exclusion against other cores modifying
+	 * the ready lists concurrently.
+	 *
+	 * This matches the ARM_CR82 SMP reference port's tick handler pattern. */
+	UBaseType_t uxSavedInterruptStatus = portENTER_CRITICAL_FROM_ISR();
+
 	/* Increment the RTOS tick. */
 	if( xTaskIncrementTick() != pdFALSE )
 	{
 		ullPortYieldRequired[ xCoreID ] = pdTRUE;
 	}
+
+	portEXIT_CRITICAL_FROM_ISR( uxSavedInterruptStatus );
 
 	/* Ensure all interrupt priorities are active again. */
 	portUNMASK_GIC_PRIORITY();
@@ -484,34 +573,6 @@ uint32_t ulReturn;
 #endif /* configASSERT_DEFINED */
 /*-----------------------------------------------------------*/
 
-/*
- * SMP spinlock functions.
- * These use the BSP's cpu_spin_lock / cpu_spin_unlock which implement
- * proper ARMv8 exclusive access primitives (LDAXR/STXR/STLR).
- */
-
-void vPortGetTaskLock( void )
-{
-	cpu_spin_lock( &ulTaskLock );
-}
-/*-----------------------------------------------------------*/
-
-void vPortReleaseTaskLock( void )
-{
-	cpu_spin_unlock( &ulTaskLock );
-}
-/*-----------------------------------------------------------*/
-
-void vPortGetISRLock( void )
-{
-	cpu_spin_lock( &ulISRLock );
-}
-/*-----------------------------------------------------------*/
-
-void vPortReleaseISRLock( void )
-{
-	cpu_spin_unlock( &ulISRLock );
-}
 /*-----------------------------------------------------------*/
 
 /*

@@ -238,8 +238,18 @@ void vApplicationGetTimerTaskMemory( StaticTask_t **ppxTimerTaskTCBBuffer, Stack
 
 void vMainAssertCalled( const char *pcFileName, uint32_t ulLineNumber )
 {
+    /* Disable interrupts at the CPU level (DAIF.I) rather than using
+     * taskENTER_CRITICAL().  In SMP mode taskENTER_CRITICAL() acquires the
+     * task+ISR spinlocks.  If an assert fires inside vTaskSwitchContext()
+     * or any other path that already holds a spinlock, calling
+     * taskENTER_CRITICAL() here would attempt to re-acquire the same
+     * non-reentrant lock on this core, causing an immediate self-deadlock
+     * that permanently orphans both locks and hangs the other core too.
+     *
+     * portDISABLE_INTERRUPTS() (DAIF mask) is safe to call from any
+     * context and does not interact with the SMP lock protocol. */
+    ( void ) portDISABLE_INTERRUPTS();
     sysprintf( "ASSERT!  Line %lu of file %s\r\n", ulLineNumber, pcFileName );
-    taskENTER_CRITICAL();
     for( ;; );
 }
 /*-----------------------------------------------------------*/
@@ -283,21 +293,45 @@ void main1( void )
 	                 configMAX_API_CALL_INTERRUPT_PRIORITY << portPRIORITY_SHIFT );
 	IRQ_Enable( (IRQn_ID_t)SGI0_IRQn );
 
-	/* 2. Spin until the SMP scheduler has assigned a task to this core.
-	 *    vTaskStartScheduler() on core 0 creates idle tasks for all cores
-	 *    and populates pxCurrentTCBs[] before calling vPortRestoreTaskContext().
-	 *    We must wait until pxCurrentTCBs[1] is non-NULL to avoid entering
-	 *    portRESTORE_CONTEXT with a NULL stack pointer. */
-	while( pxCurrentTCBs[ 1 ] == NULL )
+	/* 2. Spin until the SMP scheduler is fully running.
+	 *
+	 *    Two conditions must be true before we enter portRESTORE_CONTEXT:
+	 *
+	 *    a) pxCurrentTCBs[1] != NULL — the idle task for this core has been
+	 *       created and assigned.  Without this, portRESTORE_CONTEXT would
+	 *       dereference a NULL stack pointer.
+	 *
+	 *    b) xSchedulerRunning == pdTRUE — the SMP kernel is ready.  Without
+	 *       this, the first IRQ on core 1 would call vTaskSwitchContext() →
+	 *       prvSelectHighestPriorityTask() which asserts xSchedulerRunning.
+	 *
+	 *    pxCurrentTCBs[1] is populated during prvCreateIdleTasks() which runs
+	 *    before xSchedulerRunning is set.  So checking only pxCurrentTCBs[1]
+	 *    is insufficient — there is a window where the TCB is assigned but
+	 *    the scheduler is not yet marked as running.
+	 *
+	 *    xTaskGetSchedulerState() is safe to call here: when the scheduler
+	 *    has not started, it returns taskSCHEDULER_NOT_STARTED immediately
+	 *    without acquiring any SMP locks. */
+	while( ( pxCurrentTCBs[ 1 ] == NULL ) ||
+	       ( xTaskGetSchedulerState() == taskSCHEDULER_NOT_STARTED ) )
 	{
 		__asm volatile ( "yield" );
 	}
 
-	/* Ensure we see all writes from core 0. */
+	/* Ensure we see all writes from core 0 (pxCurrentTCBs, ready lists,
+	 * xSchedulerRunning, etc.) before we proceed. */
 	__asm volatile ( "DSB SY" ::: "memory" );
 	__asm volatile ( "ISB SY" );
 
-	/* 3. Enter the scheduler.  vPortRestoreTaskContext() installs the
+	/* 3. Disable interrupts before entering the scheduler, matching
+	 *    xPortStartScheduler() on core 0 (which calls portDISABLE_INTERRUPTS
+	 *    before vPortRestoreTaskContext).  The ERET into the first task will
+	 *    restore SPSR_EL3 which has interrupts unmasked, so they get
+	 *    re-enabled atomically when the task starts running. */
+	( void ) portDISABLE_INTERRUPTS();
+
+	/* 4. Enter the scheduler.  vPortRestoreTaskContext() installs the
 	 *    FreeRTOS vector table (VBAR_EL3) and ERETs into the task
 	 *    stored in pxCurrentTCBs[1].  This function never returns. */
 	vPortRestoreTaskContext();

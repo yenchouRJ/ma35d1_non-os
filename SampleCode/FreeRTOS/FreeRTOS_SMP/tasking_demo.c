@@ -97,6 +97,8 @@ static void prvQueueSendTask( void *pvParameters )
     /* Remove compiler warning about unused parameter. */
     ( void ) pvParameters;
 
+    sysprintf("start task %s at core %d\r\n", __FUNCTION__, xPortGetCoreID() );
+
     /* Initialise xNextWakeTime - this only needs to be done once. */
     xNextWakeTime = xTaskGetTickCount();
 
@@ -121,6 +123,8 @@ static void prvQueueReceiveTask( void *pvParameters )
 
     /* Remove compiler warning about unused parameter. */
     ( void ) pvParameters;
+
+    sysprintf("start task %s at core %d\r\n", __FUNCTION__, xPortGetCoreID() );
 
     for( ;; )
     {

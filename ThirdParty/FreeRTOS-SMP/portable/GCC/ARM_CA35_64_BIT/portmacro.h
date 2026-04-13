@@ -93,18 +93,28 @@ extern void vPortYieldCore( BaseType_t xCoreID );
 extern uint64_t ullPortInterruptNesting[];
 #define portCHECK_IF_IN_ISR()		( ullPortInterruptNesting[ portGET_CORE_ID() ] > 0 )
 
-/* SMP spinlock functions for task and ISR level critical sections.
- * The new kernel passes xCoreID to lock macros but our BSP spinlocks
- * are global (not per-core), so the parameter is accepted and ignored. */
-extern void vPortGetTaskLock( void );
-extern void vPortReleaseTaskLock( void );
-extern void vPortGetISRLock( void );
-extern void vPortReleaseISRLock( void );
+/* SMP recursive spinlock for task and ISR level critical sections.
+ *
+ * The FreeRTOS SMP kernel expects port lock functions to be RECURSIVE
+ * (re-entrant from the same core).  vPortRecursiveLock() tracks per-lock
+ * ownership and recursion count, matching the ARM_CR82 reference SMP port.
+ *
+ * Lock indices must match the eLockType_t enum in port.c. */
+typedef enum
+{
+	eLockISR = 0,
+	eLockTask,
+	eLockCount
+} eLockType_t;
 
-#define portGET_TASK_LOCK( xCoreID )		do { ( void ) ( xCoreID ); vPortGetTaskLock(); } while( 0 )
-#define portRELEASE_TASK_LOCK( xCoreID )	do { ( void ) ( xCoreID ); vPortReleaseTaskLock(); } while( 0 )
-#define portGET_ISR_LOCK( xCoreID )			do { ( void ) ( xCoreID ); vPortGetISRLock(); } while( 0 )
-#define portRELEASE_ISR_LOCK( xCoreID )		do { ( void ) ( xCoreID ); vPortReleaseISRLock(); } while( 0 )
+extern void vPortRecursiveLock( uint32_t ulCoreID,
+                                eLockType_t eLock,
+                                BaseType_t xAcquire );
+
+#define portGET_ISR_LOCK( xCoreID )			vPortRecursiveLock( ( uint32_t ) ( xCoreID ), eLockISR, pdTRUE )
+#define portRELEASE_ISR_LOCK( xCoreID )		vPortRecursiveLock( ( uint32_t ) ( xCoreID ), eLockISR, pdFALSE )
+#define portGET_TASK_LOCK( xCoreID )		vPortRecursiveLock( ( uint32_t ) ( xCoreID ), eLockTask, pdTRUE )
+#define portRELEASE_TASK_LOCK( xCoreID )	vPortRecursiveLock( ( uint32_t ) ( xCoreID ), eLockTask, pdFALSE )
 
 /*-----------------------------------------------------------*/
 
