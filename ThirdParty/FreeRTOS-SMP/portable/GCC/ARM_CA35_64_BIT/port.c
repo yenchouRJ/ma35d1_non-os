@@ -551,34 +551,6 @@ uint32_t ulReturn;
 #endif /* configASSERT_DEFINED */
 /*-----------------------------------------------------------*/
 
-/*
- * SMP spinlock functions.
- * These use the BSP's cpu_spin_lock / cpu_spin_unlock which implement
- * proper ARMv8 exclusive access primitives (LDAXR/STXR/STLR).
- */
-
-void vPortGetTaskLock( void )
-{
-	cpu_spin_lock( &ulTaskLock );
-}
-/*-----------------------------------------------------------*/
-
-void vPortReleaseTaskLock( void )
-{
-	cpu_spin_unlock( &ulTaskLock );
-}
-/*-----------------------------------------------------------*/
-
-void vPortGetISRLock( void )
-{
-	cpu_spin_lock( &ulISRLock );
-}
-/*-----------------------------------------------------------*/
-
-void vPortReleaseISRLock( void )
-{
-	cpu_spin_unlock( &ulISRLock );
-}
 /*-----------------------------------------------------------*/
 
 /*

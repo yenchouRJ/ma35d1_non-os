@@ -94,6 +94,11 @@
 			<type>1</type>
 			<locationURI>PARENT-1-PROJECT_LOC/system_MA35D1.c</locationURI>
 		</link>
+		<link>
+			<name>User/tasking_demo.c</name>
+			<type>1</type>
+			<locationURI>PARENT-1-PROJECT_LOC/tasking_demo.c</locationURI>
+		</link>
 	</linkedResources>
 	<filteredResources>
 		<filter>
@@ -180,6 +185,15 @@
 		<filter>
 			<id>1776311539477</id>
 			<name>FreeRTOS/SMP/portable</name>
+			<type>10</type>
+			<matcher>
+				<id>org.eclipse.ui.ide.multiFilter</id>
+				<arguments>1.0-name-matches-false-false-Common</arguments>
+			</matcher>
+		</filter>
+		<filter>
+			<id>1776068525276</id>
+			<name>FreeRTOS/Kernel/portable</name>
 			<type>10</type>
 			<matcher>
 				<id>org.eclipse.ui.ide.multiFilter</id>
