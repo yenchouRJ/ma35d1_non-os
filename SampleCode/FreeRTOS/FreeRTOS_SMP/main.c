@@ -7,24 +7,8 @@
  * @note     The ARMv8 Generic Timer (CNTP, PPI 30) is used for the tick.
  *           SGI0 is used for inter-core yield signalling (IPI).
  *
- * @copyright (C) 2023 Nuvoton Technology Corp. All rights reserved.
+ * @copyright (C) 2026 Nuvoton Technology Corp. All rights reserved.
  *****************************************************************************/
-/**
- * NOTE 1:  This project provides two demo applications.  A simple blinky
- * style project, and a more comprehensive test and demo application.  The
- * mainSELECTED_APPLICATION setting in main.c is used to select between the two.
- * See the notes on using mainSELECTED_APPLICATION where it is defined below.
- *
- * NOTE 2:  This file only contains the source code that is not specific to
- * either the simply blinky or full demos - this includes initialisation code
- * and callback functions.
- *
- * NOTE 3:  This project builds the FreeRTOS source code, so is expecting the
- * BSP project to be configured as a 'standalone' bsp project rather than a
- * 'FreeRTOS' bsp project.  However the BSP project MUST still be build with
- * the FREERTOS_BSP symbol defined (-DFREERTOS_BSP must be added to the
- * command line in the BSP configuration).
- */
 
 #include "NuMicro.h"
 #include "FreeRTOS.h"
@@ -33,11 +17,12 @@
 /* mainSELECTED_APPLICATION is used to select between two demo applications,
  * as described at the top of this file.
  *
- * When mainSELECTED_APPLICATION is set to 0 the simple blinky example will
+ * When mainSELECTED_APPLICATION is set to 0 the simple ping-pong example will
  * be run.
  *
- * When mainSELECTED_APPLICATION is set to 1 the comprehensive test and demo
- * application will be run.
+ * When mainSELECTED_APPLICATION is set to 1 the SMP tasking verification
+ * demo will be run (critical sections, ISR nesting, multi-core scheduling,
+ * FPU affinity).
  */
 #define mainSELECTED_APPLICATION	0
 
@@ -46,9 +31,9 @@
  * mainSELECTED_APPLICATION definition.
  */
 #if ( mainSELECTED_APPLICATION == 0 )
-extern void main_blinky( void );
+extern void main_pingpong_demo( void );
 #elif ( mainSELECTED_APPLICATION == 1 )
-extern void main_full( void );
+extern void main_scheduling_demo( void );
 #else
 #error Invalid mainSELECTED_APPLICATION setting.  See the comments at the top of this file and above the mainSELECTED_APPLICATION definition.
 #endif
@@ -157,13 +142,7 @@ void vApplicationIdleHook( void )
 
 void vApplicationTickHook( void )
 {
-#if( mainSELECTED_APPLICATION == 1 )
-    {
-        /* Only the comprehensive demo actually uses the tick hook. */
-        extern void vFullDemoTickHook( void );
-        vFullDemoTickHook();
-    }
-#endif
+
 }
 /*-----------------------------------------------------------*/
 
@@ -392,7 +371,7 @@ int main(void)
 
     /* Boot core 1.  It will enter main1() and spin-wait until the
      * scheduler populates pxCurrentTCBs[1].  We must boot it before
-     * calling main_blinky/main_full because vTaskStartScheduler()
+     * calling the selected demo entry point because vTaskStartScheduler()
      * never returns.
      *
      * IMPORTANT: Do NOT define the EnSecondaryCore preprocessor symbol.
@@ -404,11 +383,11 @@ int main(void)
     of this file. */
 #if( mainSELECTED_APPLICATION == 0 )
     {
-        main_blinky();
+        main_pingpong_demo();
     }
 #elif( mainSELECTED_APPLICATION == 1 )
     {
-        main_full();
+        main_scheduling_demo();
     }
 #endif
 

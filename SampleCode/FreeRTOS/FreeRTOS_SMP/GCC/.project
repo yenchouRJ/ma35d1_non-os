@@ -75,14 +75,14 @@
 			<locationURI>PARENT-1-PROJECT_LOC/main.c</locationURI>
 		</link>
 		<link>
+			<name>User/scheduling.c</name>
+			<type>1</type>
+			<locationURI>PARENT-1-PROJECT_LOC/scheduling.c</locationURI>
+		</link>
+		<link>
 			<name>User/system_MA35D1.c</name>
 			<type>1</type>
 			<locationURI>PARENT-1-PROJECT_LOC/system_MA35D1.c</locationURI>
-		</link>
-		<link>
-			<name>User/tasking_demo.c</name>
-			<type>1</type>
-			<locationURI>PARENT-1-PROJECT_LOC/tasking_demo.c</locationURI>
 		</link>
 	</linkedResources>
 	<filteredResources>
