@@ -1,6 +1,5 @@
 /*
- * FreeRTOS SMP Kernel V202110.00
- * Copyright (C) 2020 Amazon.com, Inc. or its affiliates.  All Rights Reserved.
+ * @copyright (C) 2026 Nuvoton Technology Corp. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -22,7 +21,6 @@
  * https://www.FreeRTOS.org
  * https://github.com/FreeRTOS
  *
- * 1 tab == 4 spaces!
  */
 
 	.text
@@ -440,7 +438,7 @@ Exit_IRQ_No_Context_Switch:
  *
  * If the application provides a strong vApplicationIRQHandler() (e.g. in
  * FreeRTOS_tick_config.c), the linker picks that and this weak version is
- * discarded — no FPU registers are saved in the IRQ path, giving maximum
+ * discarded - no FPU registers are saved in the IRQ path, giving maximum
  * performance.  This is the default / current behaviour.
  *
  * If instead the application provides a vApplicationFPUSafeIRQHandler(),

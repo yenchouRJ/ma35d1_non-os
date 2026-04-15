@@ -1,6 +1,5 @@
 /*
- * FreeRTOS SMP Kernel V202110.00
- * Copyright (C) 2020 Amazon.com, Inc. or its affiliates.  All Rights Reserved.
+ * @copyright (C) 2026 Nuvoton Technology Corp. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -22,7 +21,6 @@
  * https://www.FreeRTOS.org
  * https://github.com/FreeRTOS
  *
- * 1 tab == 4 spaces!
  */
 
 #ifndef PORTMACRO_H
@@ -85,6 +83,12 @@ static inline BaseType_t xPortGetCoreID( void )
 }
 #define portGET_CORE_ID()	xPortGetCoreID()
 
+/* SGI used for inter-core yield. We use SGI0 for FreeRTOS yield. */
+#define portYIELD_SGIn	( SGI0_IRQn )
+
+/* SGI handler for inter-core yield */
+void vSGIYieldHandler( void );
+
 /* Yield a specific core by sending an SGI (Software Generated Interrupt). */
 extern void vPortYieldCore( BaseType_t xCoreID );
 #define portYIELD_CORE( xCoreID )	vPortYieldCore( xCoreID )
@@ -108,8 +112,8 @@ typedef enum
 } eLockType_t;
 
 extern void vPortRecursiveLock( uint32_t ulCoreID,
-                                eLockType_t eLock,
-                                BaseType_t xAcquire );
+								eLockType_t eLock,
+								BaseType_t xAcquire );
 
 #define portGET_ISR_LOCK( xCoreID )			vPortRecursiveLock( ( uint32_t ) ( xCoreID ), eLockISR, pdTRUE )
 #define portRELEASE_ISR_LOCK( xCoreID )		vPortRecursiveLock( ( uint32_t ) ( xCoreID ), eLockISR, pdFALSE )
@@ -174,7 +178,7 @@ static inline void portENABLE_INTERRUPTS( void )
 /* On SMP the kernel provides vTaskEnterCritical / vTaskExitCritical
  * (in tasks.c) which implement the full SMP lock protocol and track
  * nesting in the TCB (portCRITICAL_NESTING_IN_TCB == 1).  The port's
- * vPortEnterCritical only masks the GIC priority — it does NOT acquire
+ * vPortEnterCritical only masks the GIC priority - it does NOT acquire
  * SMP locks and must not be used as portENTER_CRITICAL. */
 extern void vTaskEnterCritical( void );
 extern void vTaskExitCritical( void );

@@ -1,45 +1,19 @@
-/*
- * FreeRTOS V202212.01
- * Copyright (C) 2020 Amazon.com, Inc. or its affiliates.  All Rights Reserved.
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy of
- * this software and associated documentation files (the "Software"), to deal in
- * the Software without restriction, including without limitation the rights to
- * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
- * the Software, and to permit persons to whom the Software is furnished to do so,
- * subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
- * FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
- * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
- * IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
- * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
- *
- * https://www.FreeRTOS.org
- * https://github.com/FreeRTOS
- *
- */
-
 /**************************************************************************//**
  * @file     FreeRTOS_tick_config.c
  *
  * @brief    Timer interrupt for FreeRTOS tick using ARMv8 Generic Timer.
  *
  *           Only core 0 runs the OS tick.  The FreeRTOS-SMP kernel's
- *           xTaskIncrementTick() has no per-core gating — it unconditionally
+ *           xTaskIncrementTick() has no per-core gating - it unconditionally
  *           increments xTickCount inside a critical section.
  *           If both cores called FreeRTOS_Tick_Handler the tick would
  *           advance at 2x the intended rate.
  *
  *           Core 0's tick handler already handles time-slicing for all
- *           cores: the kernel calls prvYieldCore(x) (→ SGI) for any
+ *           cores: the kernel calls prvYieldCore(x) (SGI) for any
  *           remote core that needs a context switch.
  *
- * @copyright (C) 2023 Nuvoton Technology Corp. All rights reserved.
+ * @copyright (C) 2026 Nuvoton Technology Corp. All rights reserved.
  *****************************************************************************/
 
 /* Nuvoton includes. */
@@ -212,7 +186,7 @@ void vMainAssertCalled( const char *pcFileName, uint32_t ulLineNumber )
  * vConfigureTickInterrupt() sets up the ARMv8 Non-Secure Physical Timer (CNTP)
  * to generate periodic interrupts at configTICK_RATE_HZ.
  *
- * The CNTP timer is a PPI (Private Peripheral Interrupt, IRQ 30) — each core
+ * The CNTP timer is a PPI (Private Peripheral Interrupt, IRQ 30) - each core
  * has its own independent instance.  However, only core 0 runs the tick
  * because the SMP V202110.00 kernel's xTaskIncrementTick() unconditionally
  * increments xTickCount (no per-core gating).  If both cores ran the tick
@@ -272,7 +246,7 @@ void vClearTickInterrupt( void )
  *
  * This is a STRONG definition of vApplicationIRQHandler, which overrides the
  * weak FPU-saving version in portASM.S.  Because this strong version is
- * linked, NO FPU registers are saved/restored in the IRQ path — giving
+ * linked, NO FPU registers are saved/restored in the IRQ path - giving
  * maximum interrupt latency performance.
  *
  * If your ISR callbacks (or functions they call) use floating-point or

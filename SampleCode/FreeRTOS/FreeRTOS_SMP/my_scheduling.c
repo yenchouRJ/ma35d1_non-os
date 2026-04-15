@@ -10,7 +10,7 @@
  *             DEMO2_IRQ_NESTING_STORM   - Two HW timers at different frequencies
  *                                         and GIC priorities; checks
  *                                         ullPortInterruptNesting and SP alignment
- *             DEMO3_MIGRATION_TORTURE   - Critical section migrates with TCB;
+ *             DEMO3_MIGRATION_CRITICAL  - Critical section migrates with TCB;
  *                                         spinlock blocks other core
  *             DEMO4_FPU_PINNED          - FPU task pinned to core 1 with
  *                                         cross-core disturber
@@ -31,11 +31,11 @@
 #include <math.h>
 
 /*-----------------------------------------------------------
- * Demo selection — enable / disable individual demos.
+ * Demo selection - enable / disable individual demos.
  *----------------------------------------------------------*/
 #define DEMO1_CRITICAL_AND_ISR      1
 #define DEMO2_IRQ_NESTING_STORM     1
-#define DEMO3_MIGRATION_TORTURE     1
+#define DEMO3_MIGRATION_CRITICAL    1
 #define DEMO4_FPU_PINNED            1
 #define DEMO5_PINGPONG              1
 #define DEMO6_FPU_MIGRATION         0
@@ -59,18 +59,18 @@ static void prvPrintResult( const char *pcTestName, BaseType_t xPass )
 }
 
 /*===========================================================================
- * DEMO 1 — Preemption & Yield
+ * DEMO 1 - Preemption & Yield
  *
  * Part A: A low-priority task running on core 0 is preempted by a
  *         higher-priority task on the same core.  Both tasks are pinned
  *         to core 0.  A busy "blocker" task occupies core 1.
- *         The low-priority task records its core before and after — the
+ *         The low-priority task records its core before and after - the
  *         high-priority task must have interrupted it on core 0.
  * Part B: taskYIELD() from a running task.
  * Part C: A software timer callback gives a semaphore from ISR context
  *         and calls portYIELD_FROM_ISR to wake a blocked task.
  *
- * No "nesting depth" sub-tests — those are covered implicitly by the
+ * No "nesting depth" sub-tests - those are covered implicitly by the
  * kernel's own taskENTER/EXIT_CRITICAL implementation.
  *===========================================================================*/
 #if ( DEMO1_CRITICAL_AND_ISR == 1 )
@@ -84,12 +84,12 @@ static TimerHandle_t       xISRTimer         = NULL;
 static SemaphoreHandle_t   xDemo1Done        = NULL;
 static SemaphoreHandle_t   xPreemptDone      = NULL;
 
-/* High-priority task — pinned to core 0 (same as the low-prio task). */
+/* High-priority task - pinned to core 0 (same as the low-prio task). */
 static void prvHighPriorityTask( void *pv )
 {
     ( void ) pv;
     xHighPriCore = ( BaseType_t ) portGET_CORE_ID();
-    sysprintf( "  [Demo1] High-prio task running on core %d\r\n",
+    sysprintf( "  [Demo1] High-priority task running on core %d\r\n",
                ( int ) xHighPriCore );
     xHighPriorityRan = pdTRUE;
     vTaskDelete( NULL );
@@ -101,25 +101,25 @@ static void prvLowPriorityTask( void *pv )
 {
     ( void ) pv;
     BaseType_t xMyCore = ( BaseType_t ) portGET_CORE_ID();
-    sysprintf( "  [Demo1] Low-prio task spinning on core %d\r\n",
+    sysprintf( "  [Demo1] Low-priority task spinning on core %d\r\n",
                ( int ) xMyCore );
 
     /* Busy-wait until the high-prio task has run (it preempts us). */
     while( xHighPriorityRan == pdFALSE )
     {
-        /* Spin — the scheduler will preempt us when HiPri becomes ready. */
+        /* Spin - the scheduler will preempt us when HiPri becomes ready. */
     }
 
     /* If we get here, we were preempted and then resumed. */
     xLowWasPreempted = pdTRUE;
-    sysprintf( "  [Demo1] Low-prio task resumed on core %d after preemption\r\n",
+    sysprintf( "  [Demo1] Low-priority task resumed on core %d after preemption\r\n",
                ( int ) portGET_CORE_ID() );
 
     xSemaphoreGive( xPreemptDone );
     vTaskDelete( NULL );
 }
 
-/* Blocker — occupies core 1 so the scheduler can't put HiPri there. */
+/* Blocker - occupies core 1 so the scheduler can't put HiPri there. */
 static void prvBlockerTask( void *pv )
 {
     ( void ) pv;
@@ -133,7 +133,7 @@ static void prvBlockerTask( void *pv )
 static void prvYieldTask( void *pv )
 {
     ( void ) pv;
-    sysprintf( "  [Demo1] Yield task on core %d — calling taskYIELD()\r\n",
+    sysprintf( "  [Demo1] Yield task on core %d - calling taskYIELD()\r\n",
                ( int ) portGET_CORE_ID() );
     taskYIELD();
     sysprintf( "  [Demo1] Yield task resumed after taskYIELD()\r\n" );
@@ -144,7 +144,7 @@ static void prvYieldTask( void *pv )
 static void prvISRTimerCallback( TimerHandle_t xTimer )
 {
     ( void ) xTimer;
-    sysprintf( "  [Demo1] Timer CB on core %d — giving semaphore from ISR\r\n",
+    sysprintf( "  [Demo1] Timer CB on core %d - giving semaphore from ISR\r\n",
                ( int ) portGET_CORE_ID() );
 
     BaseType_t xWoken = pdFALSE;
@@ -159,7 +159,7 @@ static void prvDemo1Task( void *pv )
 
     sysprintf( "\r\n--- Demo 1: Preemption & Yield ---\r\n" );
 
-    /* Part A — same-core preemption.
+    /* Part A - same-core preemption.
      *
      * Strategy: pin a low-priority busy task and the high-priority task
      * both to core 0.  A blocker task occupies core 1 so core 1 is not
@@ -168,14 +168,14 @@ static void prvDemo1Task( void *pv )
     xLowWasPreempted = pdFALSE;
     xHighPriCore     = -1;
 
-    /* Blocker on core 1 (prio 5 — keeps core 1 busy). */
+    /* Blocker on core 1 (prio 5 - keeps core 1 busy). */
     xH = NULL;
     xTaskCreate( prvBlockerTask, "Blk", DEMO_STACK_SIZE, NULL,
                  tskIDLE_PRIORITY + 5, &xH );
     configASSERT( xH );
     vTaskCoreAffinitySet( xH, ( 1U << 1 ) );
 
-    /* Low-priority task on core 0 (prio 3 — will be preempted). */
+    /* Low-priority task on core 0 (prio 3 - will be preempted). */
     xH = NULL;
     xTaskCreate( prvLowPriorityTask, "LoPri", DEMO_STACK_SIZE, NULL,
                  tskIDLE_PRIORITY + 3, &xH );
@@ -185,7 +185,7 @@ static void prvDemo1Task( void *pv )
     /* Small delay so LowPri starts spinning. */
     vTaskDelay( pdMS_TO_TICKS( 20 ) );
 
-    /* High-priority task on core 0 (prio 6 — must preempt LoPri). */
+    /* High-priority task on core 0 (prio 6 - must preempt LoPri). */
     xH = NULL;
     xTaskCreate( prvHighPriorityTask, "HiPri", DEMO_STACK_SIZE, NULL,
                  tskIDLE_PRIORITY + 6, &xH );
@@ -195,20 +195,20 @@ static void prvDemo1Task( void *pv )
     /* Wait for the preemption test to complete. */
     xSemaphoreTake( xPreemptDone, pdMS_TO_TICKS( 2000 ) );
 
-    prvPrintResult( "Demo1-A  High-prio task ran", xHighPriorityRan );
-    prvPrintResult( "Demo1-A  High-prio ran on core 0 (same core)",
+    prvPrintResult( "Demo1-A  High-priority task ran", xHighPriorityRan );
+    prvPrintResult( "Demo1-A  High-priority ran on core 0 (same core)",
                     ( xHighPriCore == 0 ) ? pdTRUE : pdFALSE );
-    prvPrintResult( "Demo1-A  Low-prio was preempted and resumed",
+    prvPrintResult( "Demo1-A  Low-priority was preempted and resumed",
                     xLowWasPreempted );
 
-    /* Part B — voluntary yield. */
+    /* Part B - voluntary yield. */
     xYieldDone = pdFALSE;
     xTaskCreate( prvYieldTask, "Yield", DEMO_STACK_SIZE, NULL,
                  tskIDLE_PRIORITY + 3, NULL );
     vTaskDelay( pdMS_TO_TICKS( 100 ) );
     prvPrintResult( "Demo1-B  taskYIELD()", xYieldDone );
 
-    /* Part C — ISR semaphore wakeup via timer callback. */
+    /* Part C - ISR semaphore wakeup via timer callback. */
     xTimerStart( xISRTimer, portMAX_DELAY );
 
     if( xSemaphoreTake( xISRSem, pdMS_TO_TICKS( 2000 ) ) == pdTRUE )
@@ -231,7 +231,7 @@ static void prvDemo1Task( void *pv )
 #endif /* DEMO1_CRITICAL_AND_ISR */
 
 /*===========================================================================
- * DEMO 2 — Interrupt Nesting Storm
+ * DEMO 2 - Interrupt Nesting Storm
  *
  * Goal: Verify ullPortInterruptNesting[] and stack alignment under nested
  *       hardware interrupts.
@@ -257,13 +257,15 @@ static volatile uint32_t ulNestSeen      = 0;  /* times nesting depth > 1 */
 static volatile BaseType_t xAlignOK      = pdTRUE;
 static volatile BaseType_t xNestingBad   = pdFALSE; /* set if nesting <= 0 in ISR */
 static SemaphoreHandle_t xDemo2Done      = NULL;
+static volatile uint32_t ulTmr2WhichCore[2] = { 0, 0 };
+static volatile uint32_t ulTmr3WhichCore[2] = { 0, 0 };
 
 /*
  * GIC priority assignments (GIC: lower number = higher urgency):
  *   TIMER3 → configMAX_API_CALL_INTERRUPT_PRIORITY << portPRIORITY_SHIFT
- *            (= 18 << 3 = 144)  — highest FreeRTOS-safe priority
+ *            (= 18 << 3 = 144)  - highest FreeRTOS-safe priority
  *   TIMER2 → (configMAX_API_CALL_INTERRUPT_PRIORITY + 2) << portPRIORITY_SHIFT
- *            (= 20 << 3 = 160)  — lower urgency, can be preempted by TIMER3
+ *            (= 20 << 3 = 160)  - lower urgency, can be preempted by TIMER3
  *
  * Both priorities are >= configMAX_API_CALL_INTERRUPT_PRIORITY so they are
  * masked by FreeRTOS critical sections (safe to use FreeRTOS ISR APIs).
@@ -283,6 +285,7 @@ static void prvTmr2Handler( void )
         TIMER_ClearIntFlag( TIMER2 );
 
         BaseType_t xCore = ( BaseType_t ) portGET_CORE_ID();
+        ulTmr2WhichCore[xCore]++;
         uint64_t ullNest = ullPortInterruptNesting[ xCore ];
 
         /* Must be >= 1 while we are inside an ISR. */
@@ -306,12 +309,13 @@ static void prvTmr3Handler( void )
         TIMER_ClearIntFlag( TIMER3 );
 
         BaseType_t xCore = ( BaseType_t ) portGET_CORE_ID();
+        ulTmr3WhichCore[xCore]++;
         uint64_t ullNest = ullPortInterruptNesting[ xCore ];
 
         if( ullNest < 1 )
             xNestingBad = pdTRUE;
 
-        /* If nesting depth > 1, this ISR preempted another ISR — great! */
+        /* If nesting depth > 1, this ISR preempted another ISR - great! */
         if( ullNest > 1 )
             ulNestSeen++;
 
@@ -352,7 +356,7 @@ static void prvDemo2Task( void *pv )
     IRQ_SetPriority( ( IRQn_ID_t ) TMR2_IRQn, DEMO2_TMR2_GIC_PRIO );
     IRQ_Enable( ( IRQn_ID_t ) TMR2_IRQn );
 
-    /* TIMER3: 1 MHz, higher urgency — can nest inside TIMER2's ISR. */
+    /* TIMER3: 1 MHz, higher urgency - can nest inside TIMER2's ISR. */
     TIMER_Open( TIMER3, TIMER_PERIODIC_MODE, 1000000 );
     TIMER_EnableInt( TIMER3 );
     IRQ_SetHandler( ( IRQn_ID_t ) TMR3_IRQn, prvTmr3Handler );
@@ -378,9 +382,14 @@ static void prvDemo2Task( void *pv )
     BaseType_t xCore = ( BaseType_t ) portGET_CORE_ID();
     uint64_t ullFinalNest = ullPortInterruptNesting[ xCore ];
 
-    sysprintf( "  [Demo2] TMR2 IRQs: %lu   TMR3 IRQs: %lu\r\n",
+    sysprintf( "  [Demo2] TMR2 IRQs: %lu; distribution: Core 0 = %lu, Core 1 = %lu\r\n",
                ( unsigned long ) ulTmr2Count,
-               ( unsigned long ) ulTmr3Count );
+               ( unsigned long ) ulTmr2WhichCore[0],
+               ( unsigned long ) ulTmr2WhichCore[1] );
+    sysprintf( "  [Demo2] TMR3 IRQs: %lu; distribution: Core 0 = %lu, Core 1 = %lu\r\n",
+               ( unsigned long ) ulTmr3Count,
+               ( unsigned long ) ulTmr3WhichCore[0],
+               ( unsigned long ) ulTmr3WhichCore[1] );
     sysprintf( "  [Demo2] Nesting observed (depth>1): %lu times\r\n",
                ( unsigned long ) ulNestSeen );
     sysprintf( "  [Demo2] Final ullPortInterruptNesting[%d] = %lu\r\n",
@@ -389,25 +398,25 @@ static void prvDemo2Task( void *pv )
     /* Check 1: Both timers actually fired. */
     prvPrintResult( "Demo2-A  TIMER2 interrupts fired",
                     ( ulTmr2Count > 0 ) ? pdTRUE : pdFALSE );
-    prvPrintResult( "Demo2-B  TIMER3 interrupts fired",
+    prvPrintResult( "Demo2-A  TIMER3 interrupts fired",
                     ( ulTmr3Count > 0 ) ? pdTRUE : pdFALSE );
 
     /* Check 2: ullPortInterruptNesting was >= 1 inside every ISR. */
-    prvPrintResult( "Demo2-C  portCHECK_IF_IN_ISR() correct in ISRs",
+    prvPrintResult( "Demo2-B  portCHECK_IF_IN_ISR() correct in ISRs",
                     ( xNestingBad == pdFALSE ) ? pdTRUE : pdFALSE );
 
     /* Check 3: nesting depth back to 0 in task context. */
-    prvPrintResult( "Demo2-D  Nesting depth returned to 0 in task context",
+    prvPrintResult( "Demo2-C  Nesting depth returned to 0 in task context",
                     ( ullFinalNest == 0 ) ? pdTRUE : pdFALSE );
 
     /* Check 4: SP stayed 16-byte aligned in all ISRs. */
-    prvPrintResult( "Demo2-E  Stack pointer 16-byte aligned in ISRs", xAlignOK );
+    prvPrintResult( "Demo2-D  Stack pointer 16-byte aligned in ISRs", xAlignOK );
 
-    /* Check 5: Actual nesting happened (advisory — depends on timing). */
+    /* Check 5: Actual nesting happened (advisory - depends on timing). */
     if( ulNestSeen > 0 )
-        prvPrintResult( "Demo2-F  Genuine interrupt nesting observed", pdTRUE );
+        prvPrintResult( "Demo2-E  Genuine interrupt nesting observed", pdTRUE );
     else
-        sysprintf( "  [NOTE] Demo2-F  No nesting observed (timing-dependent, not a failure)\r\n" );
+        sysprintf( "  [NOTE] Demo2-E  No nesting observed (timing-dependent, not a failure)\r\n" );
 
     sysprintf( "--- Demo 2 complete ---\r\n" );
     xSemaphoreGive( xDemo2Done );
@@ -417,7 +426,7 @@ static void prvDemo2Task( void *pv )
 #endif /* DEMO2_IRQ_NESTING_STORM */
 
 /*===========================================================================
- * DEMO 3 — Migration & Critical Section
+ * DEMO 3 - Migration & Critical Section
  *
  * Goal: Verify that uxCriticalNesting travels correctly with the TCB and
  *       that spinlocks prevent Core 1 from entering a critical section
@@ -440,7 +449,7 @@ static void prvDemo2Task( void *pv )
  *   - Both critical sections completed without assertion or lost mask.
  *   - Task B acquired/released its critical section.
  *===========================================================================*/
-#if ( DEMO3_MIGRATION_TORTURE == 1 )
+#if ( DEMO3_MIGRATION_CRITICAL == 1 )
 
 static volatile BaseType_t xD3_TaskAFirstCore    = -1;
 static volatile BaseType_t xD3_TaskASecondCore   = -1;
@@ -457,7 +466,7 @@ static SemaphoreHandle_t   xD3_MigrateDone       = NULL;  /* Task A signals migr
 /* Busy-loop count for critical section work. */
 #define DEMO3_CRIT_ITERS   500000UL
 
-/* Evictor — high-prio task pinned to Task A's original core.
+/* Evictor - high-prio task pinned to Task A's original core.
  * Its mere existence on that core forces the scheduler to move
  * lower-priority Task A to the other core. */
 static void prvEvictorTask( void *pv )
@@ -468,7 +477,7 @@ static void prvEvictorTask( void *pv )
     vTaskDelete( NULL );
 }
 
-/* Task A — the migratable task.  No printing while it might migrate. */
+/* Task A - the migratable task.  No printing while it might migrate. */
 static void prvMigTaskA( void *pv )
 {
     ( void ) pv;
@@ -501,9 +510,10 @@ static void prvMigTaskA( void *pv )
     /* Wait for the orchestrator to force our migration. */
     xSemaphoreTake( xD3_MigrateReady, portMAX_DELAY );
 
-    xSemaphoreGive( xD3_MigrateDone ); /* Let orchestrator know migration should be done now. */
+    /* Let orchestrator know migration should be done now. */
+    xSemaphoreGive( xD3_MigrateDone );
 
-    /* Phase 2: second critical section — should now be on the other core. */
+    /* Phase 2: second critical section - should now be on the other core. */
     xD3_TaskASecondCore = ( BaseType_t ) portGET_CORE_ID();
 
     sysprintf( "  [Demo3] Task A resumed on core %d, entering 2nd critical section\r\n", 
@@ -524,7 +534,7 @@ static void prvMigTaskA( void *pv )
     vTaskDelete( NULL );
 }
 
-/* Task B — contends for the critical section from another core. */
+/* Task B - contends for the critical section from another core. */
 static void prvMigTaskB( void *pv )
 {
     ( void ) pv;
@@ -555,7 +565,7 @@ static void prvDemo3Task( void *pv )
     ( void ) pv;
     TaskHandle_t xTaskAHandle = NULL;
 
-    sysprintf( "\r\n--- Demo 3: Migration & Critical Section Torture ---\r\n" );
+    sysprintf( "\r\n--- Demo 3: Migration & Critical Section ---\r\n" );
 
     xD3_TaskADone      = pdFALSE;
     xD3_TaskBDone      = pdFALSE;
@@ -570,15 +580,12 @@ static void prvDemo3Task( void *pv )
                  tskIDLE_PRIORITY + 3, &xTaskAHandle );
     configASSERT( xTaskAHandle );
 
-    /* Create Task B (prio 3, unpinned) — will contend for critical section. */
+    /* Create Task B (prio 3, unpinned) - will contend for critical section. */
     xTaskCreate( prvMigTaskB, "MigB", DEMO_STACK_SIZE, NULL,
                  tskIDLE_PRIORITY + 3, NULL );
 
     /* Wait for Task A to finish its first critical section. */
     xSemaphoreTake( xD3_Phase1Done, portMAX_DELAY );
-
-    sysprintf( "  [Demo3] Task A completed 1st critical section on core %d\r\n",
-               ( int ) xD3_TaskAFirstCore );
 
     /* Now force migration: pin a high-priority evictor to Task A's
      * original core.  Task A (prio 3, blocked on xD3_MigrateReady) will
@@ -593,7 +600,7 @@ static void prvDemo3Task( void *pv )
     /* Small delay so evictor occupies the core. */
     vTaskDelay( pdMS_TO_TICKS( 20 ) );
 
-    /* Signal Task A to continue — it should wake on the other core. */
+    /* Signal Task A to continue - it should wake on the other core. */
     xSemaphoreGive( xD3_MigrateReady );
 
     /* Wait for everything to settle. */
@@ -619,10 +626,10 @@ static void prvDemo3Task( void *pv )
     vTaskDelete( NULL );
 }
 
-#endif /* DEMO3_MIGRATION_TORTURE */
+#endif /* DEMO3_MIGRATION_CRITICAL */
 
 /*===========================================================================
- * DEMO 4 — FPU Task Pinned to a Specific Core
+ * DEMO 4 - FPU Task Pinned to a Specific Core
  *
  * Pins a task to core 1, performs sin^2(x) + cos^2(x) == 1 with frequent
  * yields to stress the FPU context save/restore path.  A "disturber" task
@@ -679,6 +686,10 @@ static void prvFPUTask( void *pv )
                ( int ) xFPUCore, ( unsigned long ) i,
                xOK ? "yes" : "no" );
 
+    prvPrintResult( "Demo4-A  FPU pinned sin^2+cos^2 identity", xFPUPass );
+    prvPrintResult( "Demo4-B  FPU task stayed on pinned core",
+                    ( xFPUCore == FPU_PIN_CORE ) ? pdTRUE : pdFALSE );
+
     xSemaphoreGive( xDemo4Done );
     vTaskDelete( NULL );
 }
@@ -704,7 +715,7 @@ static void prvFPUDisturbTask( void *pv )
 #endif /* DEMO4_FPU_PINNED */
 
 /*===========================================================================
- * DEMO 5 — Cross-Core Ping-Pong (SGI / Yield Test)
+ * DEMO 5 - Cross-Core Ping-Pong (SGI / Yield Test)
  *
  * Goal: Verify that vPortYieldCore correctly triggers an SGI and that
  *       Core 1 responds to Core 0's request.
@@ -732,7 +743,7 @@ static volatile BaseType_t xReceiverCore   = -1;
 static TaskHandle_t        xSenderHandle   = NULL;
 static TaskHandle_t        xReceiverHandle = NULL;
 
-/* Receiver — pinned to core 1.  Waits for notification from sender. */
+/* Receiver - pinned to core 1.  Waits for notification from sender. */
 static void prvReceiverTask( void *pv )
 {
     ( void ) pv;
@@ -750,7 +761,7 @@ static void prvReceiverTask( void *pv )
     }
 }
 
-/* Sender — pinned to core 0. */
+/* Sender - pinned to core 0. */
 static void prvSenderTask( void *pv )
 {
     ( void ) pv;
@@ -786,7 +797,7 @@ static void prvSenderTask( void *pv )
 #endif /* DEMO5_PINGPONG */
 
 /*===========================================================================
- * DEMO 6 — FPU Migration Consistency
+ * DEMO 6 - FPU Migration Consistency
  *
  * Goal: Verify that the FPU context flag travels with the Task (not
  *       stuck per-core) and that FPU registers are correctly saved/restored
@@ -892,7 +903,7 @@ static void prvFPUMigrationTask( void *pv )
 #endif /* DEMO6_FPU_MIGRATION */
 
 /*===========================================================================
- * Result collector — waits for all enabled demos, prints summary.
+ * Result collector - waits for all enabled demos, prints summary.
  *===========================================================================*/
 
 static void prvResultCollector( void *pv )
@@ -905,14 +916,11 @@ static void prvResultCollector( void *pv )
 #if ( DEMO2_IRQ_NESTING_STORM == 1 )
     xSemaphoreTake( xDemo2Done, portMAX_DELAY );
 #endif
-#if ( DEMO3_MIGRATION_TORTURE == 1 )
+#if ( DEMO3_MIGRATION_CRITICAL == 1 )
     xSemaphoreTake( xDemo3Done, portMAX_DELAY );
 #endif
 #if ( DEMO4_FPU_PINNED == 1 )
     xSemaphoreTake( xDemo4Done, portMAX_DELAY );
-    prvPrintResult( "Demo4-A  FPU pinned sin^2+cos^2 identity", xFPUPass );
-    prvPrintResult( "Demo4-B  FPU task stayed on pinned core",
-                    ( xFPUCore == FPU_PIN_CORE ) ? pdTRUE : pdFALSE );
 #endif
 
 #if ( DEMO6_FPU_MIGRATION == 1 )
@@ -928,14 +936,14 @@ static void prvResultCollector( void *pv )
     sysprintf( "|  All SMP scheduling demos finished.            |\r\n" );
     sysprintf( "+-----------------------------------------------+\r\n\r\n" );
 
-    for( ;; )
-    {
-        vTaskDelay( pdMS_TO_TICKS( 10000 ) );
-    }
+    vTaskDelete( NULL );
 }
 
 /*===========================================================================
- * Entry point — called from main.c (mainSELECTED_APPLICATION == 3).
+ * scheduling demo
+ * mainSELECTED_APPLICATION == 1.
+ *
+ * Creates tasks for all selected demos and starts the scheduler.
  *===========================================================================*/
 
 void main_scheduling_demo( void )
@@ -968,12 +976,12 @@ void main_scheduling_demo( void )
 #endif
 
     /* ---- Demo 3: Migration ---- */
-#if ( DEMO3_MIGRATION_TORTURE == 1 )
+#if ( DEMO3_MIGRATION_CRITICAL == 1 )
     xDemo3Done    = xSemaphoreCreateBinary();
     xD3_Phase1Done = xSemaphoreCreateBinary();
     xD3_MigrateReady = xSemaphoreCreateBinary();
     xD3_MigrateDone = xSemaphoreCreateBinary();
-    configASSERT( xDemo3Done && xD3_Phase1Done && xD3_MigrateReady );
+    configASSERT( xDemo3Done && xD3_Phase1Done && xD3_MigrateReady && xD3_MigrateDone );
     xTaskCreate( prvDemo3Task, "D3", DEMO_STACK_SIZE, NULL,
                  tskIDLE_PRIORITY + 5, NULL );
 #endif
@@ -1026,7 +1034,7 @@ void main_scheduling_demo( void )
 
         ulDemo6Migrations = 0;
 
-        /* Unpinned FPU task — free to migrate. */
+        /* Unpinned FPU task - free to migrate. */
         xTaskCreate( prvFPUMigrationTask, "FPMig", DEMO_STACK_SIZE * 2, NULL,
                      tskIDLE_PRIORITY + 3, NULL );
 
@@ -1048,17 +1056,15 @@ void main_scheduling_demo( void )
     xTaskCreate( prvResultCollector, "Res", DEMO_STACK_SIZE, NULL,
                  tskIDLE_PRIORITY + 1, NULL );
 
-    /* Start the scheduler — never returns. */
+    /* Start the scheduler - never returns. */
     vTaskStartScheduler();
 }
 
 /*===========================================================================
- * ping-pong demo — called from main.c when
+ * ping-pong demo
  * mainSELECTED_APPLICATION == 0.
  *
- * Creates only the sender/receiver tasks and starts the scheduler.
- * The tasks run infinitely, printing status every DEMO5_PRINT_INTERVAL
- * rounds.
+ * Creates the sender/receiver tasks and starts the scheduler.
  *===========================================================================*/
 #if ( DEMO5_PINGPONG == 1 )
 
@@ -1085,7 +1091,7 @@ void main_pingpong_demo( void )
     configASSERT( xSenderHandle );
     vTaskCoreAffinitySet( xSenderHandle, ( 1U << 0 ) );
 
-    /* Start the scheduler — never returns. */
+    /* Start the scheduler - never returns. */
     vTaskStartScheduler();
 }
 

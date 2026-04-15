@@ -3,7 +3,7 @@
  * @brief    Debug1 Port Setting Source File
  *
  * SPDX-License-Identifier: Apache-2.0
- * @copyright (C) 2023 Nuvoton Technology Corp. All rights reserved.
+ * @copyright (C) 2026 Nuvoton Technology Corp. All rights reserved.
  ******************************************************************************/
 
 #include "NuMicro.h"

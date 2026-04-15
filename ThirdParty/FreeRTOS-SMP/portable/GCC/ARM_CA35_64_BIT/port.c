@@ -1,6 +1,5 @@
 /*
- * FreeRTOS SMP Kernel V202110.00
- * Copyright (C) 2020 Amazon.com, Inc. or its affiliates.  All Rights Reserved.
+ * @copyright (C) 2026 Nuvoton Technology Corp. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -22,7 +21,6 @@
  * https://www.FreeRTOS.org
  * https://github.com/FreeRTOS
  *
- * 1 tab == 4 spaces!
  */
 
 /* Standard includes. */
@@ -117,14 +115,8 @@ point is zero. */
 /* The I bit in the DAIF bits. */
 #define portDAIF_I						( 0x80 )
 
-/* Macro to unmask all GIC interrupt priorities.
- *
- * NOTE: This was previously named portCLEAR_INTERRUPT_MASK() which collides
- * with the SMP kernel macro portCLEAR_INTERRUPT_MASK(x) defined in
- * portmacro.h (FreeRTOS v11.1+).  Renamed to portUNMASK_GIC_PRIORITY()
- * to avoid confusion.  The portmacro.h version (with parameter) is used
- * by the kernel for SMP interrupt state save/restore (DAIF-based); this
- * macro is used only within port.c for GIC priority mask register access. */
+/* Macro to unmask all GIC interrupt priorities, this is used only within 
+port.c for GIC priority mask register access. */
 #define portUNMASK_GIC_PRIORITY()									\
 {																	\
 	portDISABLE_INTERRUPTS();										\
@@ -138,9 +130,6 @@ point is zero. */
 #define portINTERRUPT_PRIORITY_REGISTER_OFFSET		0x400UL
 #define portMAX_8_BIT_VALUE							( ( uint8_t ) 0xff )
 #define portBIT_0_SET								( ( uint8_t ) 0x01 )
-
-/* SGI used for inter-core yield. We use SGI0 for FreeRTOS yield. */
-#define portSGI_YIELD								( SGI0_IRQn )
 
 /*-----------------------------------------------------------*/
 
@@ -181,9 +170,6 @@ __attribute__(( used )) const uint64_t ullICCPMR = portICCPMR_PRIORITY_MASK_REGI
  * On release, we decrement the count and only truly unlock the spinlock
  * when the count reaches zero.
  *
- * This matches the ARM_CR82 SMP reference port's vPortRecursiveLock()
- * pattern, adapted to use the BSP's cpu_spin_lock/cpu_spin_unlock
- * (ARMv8 LDAXR/STXR/STLR) as the underlying primitive.
  */
 
 /* Lock indices are defined in portmacro.h as eLockType_t:
@@ -205,8 +191,8 @@ static uint32_t ulOwner[ eLockCount ] = { portLOCK_UNOWNED, portLOCK_UNOWNED };
  * @param xAcquire   pdTRUE to acquire, pdFALSE to release.
  */
 void vPortRecursiveLock( uint32_t ulCoreID,
-                         eLockType_t eLock,
-                         BaseType_t xAcquire )
+						 eLockType_t eLock,
+						 BaseType_t xAcquire )
 {
 	configASSERT( eLock < eLockCount );
 
@@ -215,13 +201,13 @@ void vPortRecursiveLock( uint32_t ulCoreID,
 		/* Acquire path. */
 		if( ulOwner[ eLock ] == ulCoreID )
 		{
-			/* Already owned by this core — just bump the recursion count. */
+			/* Already owned by this core - just bump the recursion count. */
 			configASSERT( ulRecursionCount[ eLock ] > 0 );
 			ulRecursionCount[ eLock ]++;
 		}
 		else
 		{
-			/* Not owned by this core — spin until we get the raw lock.
+			/* Not owned by this core - spin until we get the raw lock.
 			 * cpu_spin_lock is a non-reentrant LDAXR/STXR spinlock with
 			 * acquire semantics.  We only reach here when this core does
 			 * NOT already hold the lock, so no self-deadlock. */
@@ -474,9 +460,7 @@ void FreeRTOS_Tick_Handler( void )
 	 * critical section (portENTER_CRITICAL_FROM_ISR) acquires the ISR spinlock
 	 * and increments the nesting count in the current TCB, satisfying this
 	 * requirement and providing mutual exclusion against other cores modifying
-	 * the ready lists concurrently.
-	 *
-	 * This matches the ARM_CR82 SMP reference port's tick handler pattern. */
+	 * the ready lists concurrently. */
 	UBaseType_t uxSavedInterruptStatus = portENTER_CRITICAL_FROM_ISR();
 
 	/* Increment the RTOS tick. */
@@ -497,9 +481,6 @@ void vPortTaskUsesFPU( void )
 	/* A task is registering the fact that it needs an FPU context.  Set the
 	FPU flag (which is saved as part of the task context). */
 	ullPortTaskHasFPUContext[ portGET_CORE_ID() ] = pdTRUE;
-
-	/* Consider initialising the FPSR here - but probably not necessary in
-	AArch64. */
 }
 /*-----------------------------------------------------------*/
 
@@ -573,8 +554,6 @@ uint32_t ulReturn;
 #endif /* configASSERT_DEFINED */
 /*-----------------------------------------------------------*/
 
-/*-----------------------------------------------------------*/
-
 /*
  * Send an SGI to yield a specific core.
  * The target_list is a bitmask of target CPUs.
@@ -584,7 +563,29 @@ void vPortYieldCore( BaseType_t xCoreID )
 {
 	/* Send SGI0 to the target core to trigger a yield.
 	 * target_list is a CPU bitmask: bit 0 = core 0, bit 1 = core 1 */
-	GIC_SendSGI( ( IRQn_Type ) portSGI_YIELD, ( uint32_t ) ( 1UL << xCoreID ), 0 );
+	GIC_SendSGI( ( IRQn_Type ) portYIELD_SGIn, ( uint32_t ) ( 1UL << xCoreID ), 0 );
+}
+/*-----------------------------------------------------------*/
+
+/*
+ * When the SMP kernel wants core N to yield (because a higher-priority
+ * task became ready), it calls portYIELD_CORE(N) which sends SGI0 to
+ * that core.  The SGI0 interrupt enters FreeRTOS_IRQ_Handler, which
+ * dispatches through vApplicationIRQHandler -> IRQ_GetHandler(SGI0).
+ *
+ * This handler simply sets ullPortYieldRequired[coreID] = pdTRUE so
+ * that FreeRTOS_IRQ_Handler performs a context switch on IRQ exit.
+ */
+void vSGIYieldHandler( void )
+{
+	/* Determine which core is handling this SGI. */
+	uint64_t mpidr;
+	BaseType_t xCoreID;
+
+	__asm volatile ( "MRS %0, MPIDR_EL1" : "=r" ( mpidr ) ); // cpuid()
+	xCoreID = ( BaseType_t ) ( mpidr & 0x3UL );
+
+	ullPortYieldRequired[ xCoreID ] = pdTRUE;
 }
 /*-----------------------------------------------------------*/
 
@@ -596,7 +597,7 @@ void vPortYieldCore( BaseType_t xCoreID )
  * application provides vApplicationFPUSafeIRQHandler (strong), this weak
  * default is overridden by the linker.
  *
- * The weak default does nothing — this ensures a safe no-op if neither
+ * The weak default does nothing - this ensures a safe no-op if neither
  * handler is provided by the application (though in practice the
  * application MUST provide one of the two or no IRQs will be serviced).
  */

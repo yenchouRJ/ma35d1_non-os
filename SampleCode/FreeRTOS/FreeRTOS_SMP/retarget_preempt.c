@@ -1,21 +1,6 @@
 /**************************************************************************//**
- * @file     retarget.c
+ * @file     retarget_preempt.c
  * @brief    FreeRTOS-SMP thread-safe debug port (UART) I/O.
- *
- *           This is a project-local override of the library retarget.c.
- *           At link time this translation unit provides sysprintf(),
- *           sysgetchar(), sysputchar(), and sysIsKbHit(), so the
- *           identically-named symbols in Library/StdDriver/src/retarget.c
- *           are discarded.
- *
- *           Key difference from the library version:
- *             - sysprintf() uses a FreeRTOS recursive mutex in task
- *               context (priority-inheritance, preemption-safe) and falls
- *               back to a bare-metal ARMv8 spinlock only in ISR context
- *               or before the scheduler is running.
- *             - Optional "[coreN] " prefix per line, controllable at
- *               compile-time (SAFE_PRINTF_SHOW_CORE_ID) and run-time
- *               (vSafePrintfShowCoreId).
  *
  * SPDX-License-Identifier: Apache-2.0
  * @copyright (C) 2026 Nuvoton Technology Corp. All rights reserved.
@@ -290,7 +275,7 @@ void sysputchar(const char ch)
 }
 
 /*===========================================================================
- * Thread-safe sysprintf — the core of this file.
+ * Thread-safe sysprintf
  *
  * Lock strategy:
  *   - Task context (scheduler running, not in ISR):

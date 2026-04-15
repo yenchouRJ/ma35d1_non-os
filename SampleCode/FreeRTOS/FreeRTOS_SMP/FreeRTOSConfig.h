@@ -1,6 +1,5 @@
 /*
- * FreeRTOS V202212.01
- * Copyright (C) 2020 Amazon.com, Inc. or its affiliates.  All Rights Reserved.
+ * @copyright (C) 2026 Nuvoton Technology Corp. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -93,6 +92,7 @@ extern uint32_t SystemCoreClock;
  * Not needed for the initial SMP bringup. */
 #define configUSE_PASSIVE_IDLE_HOOK              0
 
+/* Enable safe printf with core ID display. */
 #define SAFE_PRINTF_SHOW_CORE_ID                 1
 
 /*-----------------------------------------------------------
@@ -101,13 +101,13 @@ extern uint32_t SystemCoreClock;
 
 #define configCPU_CLOCK_HZ              ( SystemCoreClock )
 
-#define configUSE_TICKLESS_IDLE					0
+#define configUSE_TICKLESS_IDLE         0
 #define configTICK_RATE_HZ              ( ( TickType_t ) 1000 )
 #define configUSE_PREEMPTION            1
 #define configUSE_IDLE_HOOK             1
 #define configUSE_TICK_HOOK             1
 #define configMAX_PRIORITIES            ( 8 )
-#define configMINIMAL_STACK_SIZE        ( ( unsigned short ) 200)
+#define configMINIMAL_STACK_SIZE        ( ( unsigned short ) 256)
 #define configTOTAL_HEAP_SIZE           ( ( size_t ) ( 256 * 1024 ) )
 #define configMAX_TASK_NAME_LEN         ( 16 )
 
@@ -131,8 +131,8 @@ so we select 64-bit tick width to match. */
 #define configUSE_COUNTING_SEMAPHORES   1
 #define configUSE_QUEUE_SETS            1
 
-#define configSUPPORT_STATIC_ALLOCATION			1
-#define configSUPPORT_DYNAMIC_ALLOCATION		1 /* Defaults to 1 anyway. */
+#define configSUPPORT_STATIC_ALLOCATION         1
+#define configSUPPORT_DYNAMIC_ALLOCATION        1 /* Defaults to 1 anyway. */
 
 /* Software timer definitions. */
 #define configUSE_TIMERS                1
@@ -142,18 +142,18 @@ so we select 64-bit tick width to match. */
 
 /* Set the following definitions to 1 to include the API function, or zero
 to exclude the API function. */
-#define INCLUDE_vTaskPrioritySet				1
-#define INCLUDE_uxTaskPriorityGet				1
-#define INCLUDE_vTaskDelete						1
-#define INCLUDE_vTaskCleanUpResources			1
-#define INCLUDE_vTaskSuspend					1
-#define INCLUDE_vTaskDelayUntil					1
-#define INCLUDE_vTaskDelay						1
-#define INCLUDE_xTimerPendFunctionCall			1
-#define INCLUDE_eTaskGetState					1
-#define INCLUDE_xTaskAbortDelay					1
-#define INCLUDE_xTaskGetHandle					1
-#define INCLUDE_xSemaphoreGetMutexHolder		1
+#define INCLUDE_vTaskPrioritySet                1
+#define INCLUDE_uxTaskPriorityGet               1
+#define INCLUDE_vTaskDelete                     1
+#define INCLUDE_vTaskCleanUpResources           1
+#define INCLUDE_vTaskSuspend                    1
+#define INCLUDE_vTaskDelayUntil                 1
+#define INCLUDE_vTaskDelay                      1
+#define INCLUDE_xTimerPendFunctionCall          1
+#define INCLUDE_eTaskGetState                   1
+#define INCLUDE_xTaskAbortDelay                 1
+#define INCLUDE_xTaskGetHandle                  1
+#define INCLUDE_xSemaphoreGetMutexHolder        1
 
 /* This demo makes use of one or more example stats formatting functions.  These
 format the raw data provided by the uxTaskGetSystemState() function in to human
@@ -209,9 +209,9 @@ void vClearTickInterrupt( void );
 
 /* The following constant describe the hardware, and are correct for the
 Nuvoton MA35D1 MPU. */
-#define configINTERRUPT_CONTROLLER_BASE_ADDRESS 		( GIC_DISTRIBUTOR_BASE )
+#define configINTERRUPT_CONTROLLER_BASE_ADDRESS         ( GIC_DISTRIBUTOR_BASE )
 #define configINTERRUPT_CONTROLLER_CPU_INTERFACE_OFFSET ( GIC_INTERFACE_BASE - GIC_DISTRIBUTOR_BASE )
-#define configUNIQUE_INTERRUPT_PRIORITIES				32
+#define configUNIQUE_INTERRUPT_PRIORITIES               32
 
 
 #endif /* FREERTOS_CONFIG_H */
