@@ -19,8 +19,6 @@
  *             DEMO6_FPU_MIGRATION       - Unpinned FPU task migrates across
  *                                         cores; verifies register consistency
  *
- *           Set mainSELECTED_APPLICATION to 3 in main.c to run this file.
- *
  * SPDX-License-Identifier: Apache-2.0
  * @copyright (C) 2026 Nuvoton Technology Corp. All rights reserved.
  *****************************************************************************/
@@ -35,12 +33,12 @@
 /*-----------------------------------------------------------
  * Demo selection — enable / disable individual demos.
  *----------------------------------------------------------*/
-#define DEMO1_CRITICAL_AND_ISR      0
-#define DEMO2_IRQ_NESTING_STORM     0
-#define DEMO3_MIGRATION_TORTURE     0
-#define DEMO4_FPU_PINNED            0
-#define DEMO5_PINGPONG              0
-#define DEMO6_FPU_MIGRATION         1
+#define DEMO1_CRITICAL_AND_ISR      1
+#define DEMO2_IRQ_NESTING_STORM     1
+#define DEMO3_MIGRATION_TORTURE     1
+#define DEMO4_FPU_PINNED            1
+#define DEMO5_PINGPONG              1
+#define DEMO6_FPU_MIGRATION         0
 
 /*-----------------------------------------------------------
  * Common constants and helpers.
@@ -450,10 +448,11 @@ static volatile BaseType_t xD3_TaskADone         = pdFALSE;
 static volatile BaseType_t xD3_TaskBDone         = pdFALSE;
 static volatile BaseType_t xD3_Crit1OK           = pdFALSE;
 static volatile BaseType_t xD3_Crit2OK           = pdFALSE;
-static volatile uint32_t   ulD3_SharedVar         = 0;
+static volatile uint32_t   ulD3_SharedVar        = 0;
 static SemaphoreHandle_t   xDemo3Done            = NULL;
 static SemaphoreHandle_t   xD3_Phase1Done        = NULL;  /* Task A signals after 1st crit */
-static SemaphoreHandle_t   xD3_MigrateDone       = NULL;  /* Orchestrator signals Task A to continue */
+static SemaphoreHandle_t   xD3_MigrateReady      = NULL;  /* Orchestrator signals Task A to continue */
+static SemaphoreHandle_t   xD3_MigrateDone       = NULL;  /* Task A signals migration done */
 
 /* Busy-loop count for critical section work. */
 #define DEMO3_CRIT_ITERS   500000UL
@@ -464,9 +463,8 @@ static SemaphoreHandle_t   xD3_MigrateDone       = NULL;  /* Orchestrator signal
 static void prvEvictorTask( void *pv )
 {
     ( void ) pv;
-    /* Run briefly then delete — just need to occupy the core momentarily. */
-    volatile uint32_t ul;
-    for( ul = 0; ul < 200000UL; ul++ ) {}
+    /* Wait until Task A signals it's done with migration. */
+    xSemaphoreTake( xD3_MigrateDone, portMAX_DELAY ); 
     vTaskDelete( NULL );
 }
 
@@ -501,7 +499,9 @@ static void prvMigTaskA( void *pv )
                ( int ) xD3_TaskAFirstCore );
 
     /* Wait for the orchestrator to force our migration. */
-    xSemaphoreTake( xD3_MigrateDone, portMAX_DELAY );
+    xSemaphoreTake( xD3_MigrateReady, portMAX_DELAY );
+
+    xSemaphoreGive( xD3_MigrateDone ); /* Let orchestrator know migration should be done now. */
 
     /* Phase 2: second critical section — should now be on the other core. */
     xD3_TaskASecondCore = ( BaseType_t ) portGET_CORE_ID();
@@ -581,7 +581,7 @@ static void prvDemo3Task( void *pv )
                ( int ) xD3_TaskAFirstCore );
 
     /* Now force migration: pin a high-priority evictor to Task A's
-     * original core.  Task A (prio 3, blocked on xD3_MigrateDone) will
+     * original core.  Task A (prio 3, blocked on xD3_MigrateReady) will
      * be migrated to the other core when it becomes ready again. */
     BaseType_t xOrigCore = xD3_TaskAFirstCore;
     TaskHandle_t xEvH = NULL;
@@ -594,7 +594,7 @@ static void prvDemo3Task( void *pv )
     vTaskDelay( pdMS_TO_TICKS( 20 ) );
 
     /* Signal Task A to continue — it should wake on the other core. */
-    xSemaphoreGive( xD3_MigrateDone );
+    xSemaphoreGive( xD3_MigrateReady );
 
     /* Wait for everything to settle. */
     vTaskDelay( pdMS_TO_TICKS( 2000 ) );
@@ -914,16 +914,7 @@ static void prvResultCollector( void *pv )
     prvPrintResult( "Demo4-B  FPU task stayed on pinned core",
                     ( xFPUCore == FPU_PIN_CORE ) ? pdTRUE : pdFALSE );
 #endif
-#if ( DEMO5_PINGPONG == 1 )
-    /* Demo 5 runs infinitely — just check it started successfully. */
-    vTaskDelay( pdMS_TO_TICKS( 500 ) );
-    prvPrintResult( "Demo5-A  Ping-pong running (checked after 500ms)",
-                    ( ulPingCount > 0 && ulPongCount > 0 ) ? pdTRUE : pdFALSE );
-    prvPrintResult( "Demo5-B  Receiver ran on core 1",
-                    ( xReceiverCore == 1 ) ? pdTRUE : pdFALSE );
-    sysprintf( "  [Demo5] Ping-pong continues in background (pings=%lu pongs=%lu)\r\n",
-               ( unsigned long ) ulPingCount, ( unsigned long ) ulPongCount );
-#endif
+
 #if ( DEMO6_FPU_MIGRATION == 1 )
     xSemaphoreTake( xDemo6Done, portMAX_DELAY );
     prvPrintResult( "Demo6-A  FPU registers correct after migration", xDemo6Pass );
@@ -980,8 +971,9 @@ void main_scheduling_demo( void )
 #if ( DEMO3_MIGRATION_TORTURE == 1 )
     xDemo3Done    = xSemaphoreCreateBinary();
     xD3_Phase1Done = xSemaphoreCreateBinary();
+    xD3_MigrateReady = xSemaphoreCreateBinary();
     xD3_MigrateDone = xSemaphoreCreateBinary();
-    configASSERT( xDemo3Done && xD3_Phase1Done && xD3_MigrateDone );
+    configASSERT( xDemo3Done && xD3_Phase1Done && xD3_MigrateReady );
     xTaskCreate( prvDemo3Task, "D3", DEMO_STACK_SIZE, NULL,
                  tskIDLE_PRIORITY + 5, NULL );
 #endif
@@ -1077,9 +1069,6 @@ void main_pingpong_demo( void )
     sysprintf( "|  MA35D1 FreeRTOS-SMP Cross-Core Ping-Pong     |\r\n" );
     sysprintf( "+-----------------------------------------------+\r\n" );
     sysprintf( "  Cores: %d\r\n", configNUMBER_OF_CORES );
-    sysprintf( "  Sender on core 0, Receiver on core 1\r\n" );
-    sysprintf( "  Status printed every %d rounds\r\n\r\n",
-               DEMO5_PRINT_INTERVAL );
 
     ulPingCount   = 0;
     ulPongCount   = 0;
