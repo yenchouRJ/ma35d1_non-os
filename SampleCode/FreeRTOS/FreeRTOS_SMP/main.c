@@ -95,87 +95,36 @@ void main1( void )
 /*-----------------------------------------------------------*/
 /* Secondary core (core 1) entry point.                      */
 /*-----------------------------------------------------------*/
-
-/*
- * main1() overrides the weak default in system_MA35D1.c.
- *
- * Boot sequence for core 1:
- *   startup.S: SecondaryCore -> set stack -> SystemInit1() -> main1()
- *
- * SystemInit1() has already:
- *   - Set the generic timer frequency
- *   - Initialised the MMU
- *   - Initialised the GIC CPU interface
- *   - Enabled interrupts
- *
- * What we do here:
- *   1. Install the SGI0 yield handler on this core's GIC
- *   2. Wait for core 0 to start the scheduler (pxCurrentTCBs[1] populated)
- *   3. Enter the FreeRTOS scheduler via vPortRestoreTaskContext()
- *      (which installs the FreeRTOS vector table and ERET into the
- *       first task assigned to this core)
- *
- * NOTE: Core 1 does NOT set up a tick timer.  Only core 0 runs the OS
- *       tick because the SMP V202110.00 kernel's xTaskIncrementTick()
- *       unconditionally increments xTickCount — running it on both cores
- *       would advance the tick at 2x speed.  Core 0 handles time-slicing
- *       for all cores via SGI (prvYieldCore).
- */
 void main1( void )
 {
-	/* 1. Install the SGI0 yield handler on this core.
-	 *    The GIC CPU interface was already initialised by SystemInit1().
-	 *    IRQ_SetHandler / IRQ_Enable work on the calling core's PPI/SGI. */
-	IRQ_SetHandler( (IRQn_ID_t)SGI0_IRQn, prvSGI0YieldHandler );
-	IRQ_SetPriority( (IRQn_ID_t)SGI0_IRQn,
-	                 configMAX_API_CALL_INTERRUPT_PRIORITY << portPRIORITY_SHIFT );
-	IRQ_Enable( (IRQn_ID_t)SGI0_IRQn );
+    /* Install SGI0 yield handler on core 1. */
+    IRQ_SetHandler( (IRQn_ID_t)portYIELD_SGIn, vSGIYieldHandler );
+    IRQ_SetPriority( (IRQn_ID_t)portYIELD_SGIn,
+                    configMAX_API_CALL_INTERRUPT_PRIORITY << portPRIORITY_SHIFT );
+    IRQ_Enable( (IRQn_ID_t)portYIELD_SGIn );
 
-	/* 2. Spin until the SMP scheduler is fully running.
-	 *
-	 *    Two conditions must be true before we enter portRESTORE_CONTEXT:
-	 *
-	 *    a) pxCurrentTCBs[1] != NULL — the idle task for this core has been
-	 *       created and assigned.  Without this, portRESTORE_CONTEXT would
-	 *       dereference a NULL stack pointer.
-	 *
-	 *    b) xSchedulerRunning == pdTRUE — the SMP kernel is ready.  Without
-	 *       this, the first IRQ on core 1 would call vTaskSwitchContext() →
-	 *       prvSelectHighestPriorityTask() which asserts xSchedulerRunning.
-	 *
-	 *    pxCurrentTCBs[1] is populated during prvCreateIdleTasks() which runs
-	 *    before xSchedulerRunning is set.  So checking only pxCurrentTCBs[1]
-	 *    is insufficient — there is a window where the TCB is assigned but
-	 *    the scheduler is not yet marked as running.
-	 *
-	 *    xTaskGetSchedulerState() is safe to call here: when the scheduler
-	 *    has not started, it returns taskSCHEDULER_NOT_STARTED immediately
-	 *    without acquiring any SMP locks. */
-	while( ( pxCurrentTCBs[ 1 ] == NULL ) ||
-	       ( xTaskGetSchedulerState() == taskSCHEDULER_NOT_STARTED ) )
-	{
-		__asm volatile ( "yield" );
-	}
+    /* Spin until the SMP scheduler is fully running. */
+    while( ( pxCurrentTCBs[ 1 ] == NULL ) ||
+            ( xTaskGetSchedulerState() == taskSCHEDULER_NOT_STARTED ) )
+    {
+        __asm volatile ( "yield" );
+    }
 
-	/* Ensure we see all writes from core 0 (pxCurrentTCBs, ready lists,
-	 * xSchedulerRunning, etc.) before we proceed. */
-	__asm volatile ( "DSB SY" ::: "memory" );
-	__asm volatile ( "ISB SY" );
+    /* Ensure we see all writes from core 0 (pxCurrentTCBs, ready lists,
+     * xSchedulerRunning, etc.) before we proceed. */
+    __asm volatile ( "DSB SY" ::: "memory" );
+    __asm volatile ( "ISB SY" );
 
-	/* 3. Disable interrupts before entering the scheduler, matching
-	 *    xPortStartScheduler() on core 0 (which calls portDISABLE_INTERRUPTS
-	 *    before vPortRestoreTaskContext).  The ERET into the first task will
-	 *    restore SPSR_EL3 which has interrupts unmasked, so they get
-	 *    re-enabled atomically when the task starts running. */
-	( void ) portDISABLE_INTERRUPTS();
+    /* Disable interrupts before entering the scheduler.The ERET into
+     * the first task will restore SPSR_EL3 which has interrupts unmasked,
+     * so they get re-enabled atomically when the task starts running. */
+    ( void ) portDISABLE_INTERRUPTS();
 
-	/* 4. Enter the scheduler.  vPortRestoreTaskContext() installs the
-	 *    FreeRTOS vector table (VBAR_EL3) and ERETs into the task
-	 *    stored in pxCurrentTCBs[1].  This function never returns. */
-	vPortRestoreTaskContext();
+    /* Enter the scheduler. */
+    vPortRestoreTaskContext();
 
-	/* Should never reach here. */
-	for( ;; );
+    /* Should never reach here. */
+    for( ;; );
 }
 
 void UART0_Init()

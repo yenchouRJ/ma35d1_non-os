@@ -131,9 +131,6 @@ port.c for GIC priority mask register access. */
 #define portMAX_8_BIT_VALUE							( ( uint8_t ) 0xff )
 #define portBIT_0_SET								( ( uint8_t ) 0x01 )
 
-/* SGI used for inter-core yield. We use SGI0 for FreeRTOS yield. */
-#define portSGI_YIELD								( SGI0_IRQn )
-
 /*-----------------------------------------------------------*/
 
 /*
@@ -551,8 +548,6 @@ uint32_t ulReturn;
 #endif /* configASSERT_DEFINED */
 /*-----------------------------------------------------------*/
 
-/*-----------------------------------------------------------*/
-
 /*
  * Send an SGI to yield a specific core.
  * The target_list is a bitmask of target CPUs.
@@ -562,7 +557,29 @@ void vPortYieldCore( BaseType_t xCoreID )
 {
 	/* Send SGI0 to the target core to trigger a yield.
 	 * target_list is a CPU bitmask: bit 0 = core 0, bit 1 = core 1 */
-	GIC_SendSGI( ( IRQn_Type ) portSGI_YIELD, ( uint32_t ) ( 1UL << xCoreID ), 0 );
+	GIC_SendSGI( ( IRQn_Type ) portYIELD_SGIn, ( uint32_t ) ( 1UL << xCoreID ), 0 );
+}
+/*-----------------------------------------------------------*/
+
+/*
+ * When the SMP kernel wants core N to yield (because a higher-priority
+ * task became ready), it calls portYIELD_CORE(N) which sends SGI0 to
+ * that core.  The SGI0 interrupt enters FreeRTOS_IRQ_Handler, which
+ * dispatches through vApplicationIRQHandler -> IRQ_GetHandler(SGI0).
+ *
+ * This handler simply sets ullPortYieldRequired[coreID] = pdTRUE so
+ * that FreeRTOS_IRQ_Handler performs a context switch on IRQ exit.
+ */
+void vSGIYieldHandler( void )
+{
+	/* Determine which core is handling this SGI. */
+	uint64_t mpidr;
+	BaseType_t xCoreID;
+
+	__asm volatile ( "MRS %0, MPIDR_EL1" : "=r" ( mpidr ) ); // cpuid()
+	xCoreID = ( BaseType_t ) ( mpidr & 0x3UL );
+
+	ullPortYieldRequired[ xCoreID ] = pdTRUE;
 }
 /*-----------------------------------------------------------*/
 

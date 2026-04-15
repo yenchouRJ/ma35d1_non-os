@@ -709,6 +709,10 @@ static void prvFPUTask( void *pv )
 
     sysprintf( "--- Demo 4 complete ---\r\n" );
 
+    prvPrintResult( "Demo4-A  FPU pinned sin^2+cos^2 identity", xFPUPass );
+    prvPrintResult( "Demo4-B  FPU task stayed on pinned core",
+                    ( xFPUCore == FPU_PIN_CORE ) ? pdTRUE : pdFALSE );
+
     xSemaphoreGive( xDemo4Done );
     vTaskDelete( NULL );
 }
