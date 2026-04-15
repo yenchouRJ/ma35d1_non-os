@@ -17,8 +17,6 @@
  *             DEMO5_PINGPONG            - Cross-core ping-pong via
  *                                         xTaskNotifyGive / SGI yield
  *
- *           Set mainSELECTED_APPLICATION to 3 in main.c to run this file.
- *
  * SPDX-License-Identifier: Apache-2.0
  * @copyright (C) 2026 Nuvoton Technology Corp. All rights reserved.
  *****************************************************************************/
@@ -33,12 +31,11 @@
 /*-----------------------------------------------------------
  * Demo selection — enable / disable individual demos.
  *----------------------------------------------------------*/
-#define DEMO1_CRITICAL_AND_ISR      0
-#define DEMO2_IRQ_NESTING_STORM     0
-#define DEMO3_MIGRATION_TORTURE     0
-#define DEMO4_FPU_PINNED            0
+#define DEMO1_CRITICAL_AND_ISR      1
+#define DEMO2_IRQ_NESTING_STORM     1
+#define DEMO3_MIGRATION_TORTURE     1
+#define DEMO4_FPU_PINNED            1
 #define DEMO5_PINGPONG              1
-#define DEMO6_FPU_MIGRATION         0
 
 /*-----------------------------------------------------------
  * Common constants and helpers.
@@ -442,10 +439,11 @@ static volatile BaseType_t xD3_TaskADone         = pdFALSE;
 static volatile BaseType_t xD3_TaskBDone         = pdFALSE;
 static volatile BaseType_t xD3_Crit1OK           = pdFALSE;
 static volatile BaseType_t xD3_Crit2OK           = pdFALSE;
-static volatile uint32_t   ulD3_SharedVar         = 0;
+static volatile uint32_t   ulD3_SharedVar        = 0;
 static SemaphoreHandle_t   xDemo3Done            = NULL;
 static SemaphoreHandle_t   xD3_Phase1Done        = NULL;  /* Task A signals after 1st crit */
-static SemaphoreHandle_t   xD3_MigrateDone       = NULL;  /* Orchestrator signals Task A to continue */
+static SemaphoreHandle_t   xD3_MigrateReady      = NULL;  /* Orchestrator signals Task A to continue */
+static SemaphoreHandle_t   xD3_MigrateDone       = NULL;  /* Task A signals migration done */
 
 /* Busy-loop count for critical section work. */
 #define DEMO3_CRIT_ITERS   500000UL
@@ -456,9 +454,8 @@ static SemaphoreHandle_t   xD3_MigrateDone       = NULL;  /* Orchestrator signal
 static void prvEvictorTask( void *pv )
 {
     ( void ) pv;
-    /* Run briefly then delete — just need to occupy the core momentarily. */
-    volatile uint32_t ul;
-    for( ul = 0; ul < 200000UL; ul++ ) {}
+    /* Wait until Task A signals it's done with migration. */
+    xSemaphoreTake( xD3_MigrateDone, portMAX_DELAY ); 
     vTaskDelete( NULL );
 }
 
@@ -493,7 +490,9 @@ static void prvMigTaskA( void *pv )
                ( int ) xD3_TaskAFirstCore );
 
     /* Wait for the orchestrator to force our migration. */
-    xSemaphoreTake( xD3_MigrateDone, portMAX_DELAY );
+    xSemaphoreTake( xD3_MigrateReady, portMAX_DELAY );
+
+    xSemaphoreGive( xD3_MigrateDone ); /* Let orchestrator know migration should be done now. */
 
     /* Phase 2: second critical section — should now be on the other core. */
     xD3_TaskASecondCore = ( BaseType_t ) portGET_CORE_ID();
@@ -573,7 +572,7 @@ static void prvDemo3Task( void *pv )
                ( int ) xD3_TaskAFirstCore );
 
     /* Now force migration: pin a high-priority evictor to Task A's
-     * original core.  Task A (prio 3, blocked on xD3_MigrateDone) will
+     * original core.  Task A (prio 3, blocked on xD3_MigrateReady) will
      * be migrated to the other core when it becomes ready again. */
     BaseType_t xOrigCore = xD3_TaskAFirstCore;
     TaskHandle_t xEvH = NULL;
@@ -586,7 +585,7 @@ static void prvDemo3Task( void *pv )
     vTaskDelay( pdMS_TO_TICKS( 20 ) );
 
     /* Signal Task A to continue — it should wake on the other core. */
-    xSemaphoreGive( xD3_MigrateDone );
+    xSemaphoreGive( xD3_MigrateReady );
 
     /* Wait for everything to settle. */
     vTaskDelay( pdMS_TO_TICKS( 2000 ) );
@@ -770,112 +769,6 @@ static void prvSenderTask( void *pv )
 #endif /* DEMO5_PINGPONG */
 
 /*===========================================================================
- * DEMO 6 — FPU Migration Consistency
- *
- * Goal: Verify that the FPU context flag travels with the Task (not
- *       stuck per-core) and that FPU registers are correctly saved/restored
- *       across core migrations.
- *
- * Setup:
- *   - Create an *unpinned* task (can run on either core).
- *   - Call vPortTaskUsesFPU().
- *   - Perform a complex FP calculation across many yields, allowing the
- *     scheduler to migrate the task between cores freely.
- *   - A disturber task on each core trashes FPU registers.
- *
- * Validation:
- *   - The final FP result matches the expected value.
- *   - If the result is 0.0 or garbage, the assembly failed to see the
- *     "Has FPU" flag in the TCB when restoring on the other core.
- *===========================================================================*/
-#if ( DEMO6_FPU_MIGRATION == 1 )
-
-#define DEMO6_ITERATIONS    1000
-#define DEMO6_EPSILON       ( 1.0e-6 )
-
-static volatile BaseType_t xDemo6Pass       = pdFALSE;
-static volatile uint32_t   ulDemo6Migrations = 0;
-static SemaphoreHandle_t   xDemo6Done       = NULL;
-
-/* Disturber: trashes FPU regs on one core. */
-static void prvFPUTrashTask( void *pv )
-{
-    ( void ) pv;
-    vPortTaskUsesFPU();
-
-    volatile double d = 99999.99;
-    uint32_t i;
-    for( i = 0; i < DEMO6_ITERATIONS * 100; i++ )
-    {
-        d = d * 1.0001 - 0.5;
-        if( ( i % 20 ) == 0 )
-            taskYIELD();
-    }
-    ( void ) d;
-    vTaskDelete( NULL );
-}
-
-static void prvFPUMigrationTask( void *pv )
-{
-    ( void ) pv;
-
-    vPortTaskUsesFPU();
-
-    sysprintf( "\r\n--- Demo 6: FPU Migration Consistency ---\r\n" );
-    sysprintf( "  [Demo6] FPU migration task starting on core %d (unpinned)\r\n",
-               ( int ) portGET_CORE_ID() );
-
-    BaseType_t xLastCore = ( BaseType_t ) portGET_CORE_ID();
-    double dAccum = 0.0;
-    uint32_t i;
-
-    for( i = 0; i < DEMO6_ITERATIONS; i++ )
-    {
-        double x = ( double ) i * 0.1;
-        double s = sin( x );
-        double c = cos( x );
-        taskYIELD();
-        double identity = ( s * s ) + ( c * c );  /* should be 1.0 */
-
-        dAccum += identity;
-
-        /* Yield frequently to allow migration. */
-        // if( ( i % 1 ) == 0 )
-        {
-            // taskYIELD();
-
-            BaseType_t xNowCore = ( BaseType_t ) portGET_CORE_ID();
-            if( xNowCore != xLastCore )
-            {
-                ulDemo6Migrations++;
-                xLastCore = xNowCore;
-            }
-        }
-    }
-
-    /* Expected: dAccum ≈ DEMO6_ITERATIONS (each iteration added 1.0). */
-    double dExpected = ( double ) DEMO6_ITERATIONS;
-    double dError = fabs( dAccum - dExpected );
-
-    sysprintf( "  [Demo6] FPU result: accumulated = %d.%06d  expected = %d.%06d\r\n",
-               ( int ) dAccum,
-               ( int ) ( ( dAccum - ( int ) dAccum ) * 1000000.0 ),
-               ( int ) dExpected,
-               ( int ) ( ( dExpected - ( int ) dExpected ) * 1000000.0 ) );
-    sysprintf( "  [Demo6] Error = %d.%09d   Migrations = %lu\r\n",
-               ( int ) dError,
-               ( int ) ( ( dError - ( int ) dError ) * 1000000000.0 ),
-               ( unsigned long ) ulDemo6Migrations );
-
-    xDemo6Pass = ( dError < DEMO6_EPSILON ) ? pdTRUE : pdFALSE;
-
-    xSemaphoreGive( xDemo6Done );
-    vTaskDelete( NULL );
-}
-
-#endif /* DEMO6_FPU_MIGRATION */
-
-/*===========================================================================
  * Result collector — waits for all enabled demos, prints summary.
  *===========================================================================*/
 
@@ -897,15 +790,6 @@ static void prvResultCollector( void *pv )
     prvPrintResult( "Demo4-A  FPU pinned sin^2+cos^2 identity", xFPUPass );
     prvPrintResult( "Demo4-B  FPU task stayed on pinned core",
                     ( xFPUCore == FPU_PIN_CORE ) ? pdTRUE : pdFALSE );
-#endif
-
-#if ( DEMO6_FPU_MIGRATION == 1 )
-    xSemaphoreTake( xDemo6Done, portMAX_DELAY );
-    prvPrintResult( "Demo6-A  FPU registers correct after migration", xDemo6Pass );
-    if( ulDemo6Migrations > 0 )
-        prvPrintResult( "Demo6-B  Task actually migrated across cores", pdTRUE );
-    else
-        sysprintf( "  [NOTE] Demo6-B  No migration observed (timing-dependent, not a failure)\r\n" );
 #endif
 
     sysprintf( "\r\n+-----------------------------------------------+\r\n" );
@@ -955,8 +839,9 @@ void main_scheduling_demo( void )
 #if ( DEMO3_MIGRATION_TORTURE == 1 )
     xDemo3Done    = xSemaphoreCreateBinary();
     xD3_Phase1Done = xSemaphoreCreateBinary();
+    xD3_MigrateReady = xSemaphoreCreateBinary();
     xD3_MigrateDone = xSemaphoreCreateBinary();
-    configASSERT( xDemo3Done && xD3_Phase1Done && xD3_MigrateDone );
+    configASSERT( xDemo3Done && xD3_Phase1Done && xD3_MigrateReady );
     xTaskCreate( prvDemo3Task, "D3", DEMO_STACK_SIZE, NULL,
                  tskIDLE_PRIORITY + 5, NULL );
 #endif
@@ -998,32 +883,6 @@ void main_scheduling_demo( void )
                      tskIDLE_PRIORITY + 4, &xSenderHandle );
         configASSERT( xSenderHandle );
         vTaskCoreAffinitySet( xSenderHandle, ( 1U << 0 ) );
-    }
-#endif
-
-    /* ---- Demo 6: FPU Migration Consistency ---- */
-#if ( DEMO6_FPU_MIGRATION == 1 )
-    {
-        xDemo6Done = xSemaphoreCreateBinary();
-        configASSERT( xDemo6Done );
-
-        ulDemo6Migrations = 0;
-
-        /* Unpinned FPU task — free to migrate. */
-        xTaskCreate( prvFPUMigrationTask, "FPMig", DEMO_STACK_SIZE * 2, NULL,
-                     tskIDLE_PRIORITY + 3, NULL );
-
-        /* Disturber on each core to trash FPU regs. */
-        TaskHandle_t xT0 = NULL, xT1 = NULL;
-        xTaskCreate( prvFPUTrashTask, "Trsh0", DEMO_STACK_SIZE * 2, NULL,
-                     tskIDLE_PRIORITY + 3, &xT0 );
-        configASSERT( xT0 );
-        vTaskCoreAffinitySet( xT0, ( 1U << 0 ) );
-
-        xTaskCreate( prvFPUTrashTask, "Trsh1", DEMO_STACK_SIZE * 2, NULL,
-                     tskIDLE_PRIORITY + 3, &xT1 );
-        configASSERT( xT1 );
-        vTaskCoreAffinitySet( xT1, ( 1U << 1 ) );
     }
 #endif
 

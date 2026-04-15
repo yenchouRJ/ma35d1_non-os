@@ -93,6 +93,8 @@ extern uint32_t SystemCoreClock;
  * Not needed for the initial SMP bringup. */
 #define configUSE_PASSIVE_IDLE_HOOK              0
 
+#define SAFE_PRINTF_SHOW_CORE_ID                 1
+
 /*-----------------------------------------------------------
  * General Configuration.
  *----------------------------------------------------------*/
