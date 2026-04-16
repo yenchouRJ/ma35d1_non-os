@@ -1,7 +1,7 @@
 /**************************************************************************//**
  * @file     main.c
  *
- * @brief    FreeRTOS-SMP project for dual-core MA35D1 (Cortex-A35).
+ * @brief    FreeRTOS-SMP project for dual-core MA35 (Cortex-A35).
  *           Core 0 starts the scheduler; core 1 enters via main1().
  *
  * @note     The ARMv8 Generic Timer (CNTP, PPI 30) is used for the tick.
@@ -122,7 +122,7 @@ void SYS_Init()
 }
 
 /*-----------------------------------------------------------*/
-/* Primary core (core 0) entry point.                       */
+/* Primary core (core 0) entry point.                        */
 /*-----------------------------------------------------------*/
 int main(void)
 {
@@ -132,7 +132,7 @@ int main(void)
      * Must be called before any FreeRTOS task calls sysprintf(). */
     vSafePrintfInit();
 
-    sysprintf("\n\nCPU @ %d Hz\n", SystemCoreClock);
+    sysprintf("\nCPU @ %d Hz\n", SystemCoreClock);
     sysprintf("FreeRTOS-SMP starting on %d cores\n", configNUMBER_OF_CORES);
 
     /* Install SGI0 yield handler on core 0. */

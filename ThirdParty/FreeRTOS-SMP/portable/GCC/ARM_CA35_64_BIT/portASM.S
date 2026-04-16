@@ -449,8 +449,8 @@ Exit_IRQ_No_Context_Switch:
  * code (or functions it calls) uses floating-point / NEON instructions.
  *
  * Summary for application writers:
- *   - ISRs do NOT use FPU → implement vApplicationIRQHandler (no overhead)
- *   - ISRs DO use FPU     → implement vApplicationFPUSafeIRQHandler
+ *   - ISRs do NOT use FPU : implement vApplicationIRQHandler (no overhead)
+ *   - ISRs DO use FPU     : implement vApplicationFPUSafeIRQHandler
  *****************************************************************************/
 .align 8
 .weak vApplicationIRQHandler

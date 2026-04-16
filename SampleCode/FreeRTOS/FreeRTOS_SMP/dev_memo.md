@@ -291,10 +291,12 @@ ISR-safe interrupts: priority >= 18 (numerically <= 18)
   [PASS] Demo3-E  Task A migrated across cores
 --- Demo 3 complete ---
 
-  [Demo4] FPU task on core 1 (pinned to 1)
-  [Demo4] FPU task done on core 1  iters=1,000  pass=yes
+  [Demo4] FPU task on core 1
+  [Demo4] FPU task done on core 1  iters=1,000,000  pass=yes
+  [Demo4] Disturber preempted FPU task 560 times
   [PASS] Demo4-A  FPU pinned sin^2+cos^2 identity
   [PASS] Demo4-B  FPU task stayed on pinned core
+  [PASS] Demo4-C  Disturber actually preempted FPU task
 
 --- Demo 5: Cross-Core Ping-Pong ---
   pings=100 [sender 0], pongs=100 [receiver 1]

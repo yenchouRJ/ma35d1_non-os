@@ -1,7 +1,7 @@
 /**************************************************************************//**
  * @file     scheduling.c
  *
- * @brief    FreeRTOS-SMP scheduling demos for MA35D1 dual-core Cortex-A35.
+ * @brief    FreeRTOS-SMP scheduling demos for MA35 dual-core Cortex-A35.
  *
  *           Demo selection via #define switches:
  *             DEMO1_CRITICAL_AND_ISR    - Combined critical-section preemption
@@ -11,8 +11,8 @@
  *                                         ullPortInterruptNesting and SP alignment
  *             DEMO3_MIGRATION_CRITICAL  - Critical section migrates with TCB;
  *                                         spinlock blocks other core
- *             DEMO4_FPU_PINNED          - FPU task pinned to core 1 with
- *                                         cross-core disturber
+ *             DEMO4_FPU_PINNED          - Tests FPU context correctness when a
+ *                                         disturber task is pinned to the same core
  *             DEMO5_PINGPONG            - Cross-core ping-pong via
  *                                         xTaskNotifyGive / SGI yield
  *
@@ -154,8 +154,8 @@ static void prvDemo1Task( void *pv )
 
     /* Part A - same-core preemption.
      *
-     * Strategy: pin a low-priority busy task and the high-priority task
-     * both to core 0.  A blocker task occupies core 1 so core 1 is not
+     * Pin a low-priority busy task and the high-priority task both
+     * to core 0.  A blocker task occupies core 1 so core 1 is not
      * free.  When HiPri is created it must preempt LowPri on core 0. */
     xHighPriorityRan = pdFALSE;
     xLowWasPreempted = pdFALSE;
@@ -303,7 +303,7 @@ static void prvTmr3Handler( void )
         if( ullNest < 1 )
             xNestingBad = pdTRUE;
 
-        /* If nesting depth > 1, this ISR preempted another ISR - great! */
+        /* If nesting depth > 1, this ISR preempted another ISR */
         if( ullNest > 1 )
             ulNestSeen++;
 
@@ -449,6 +449,7 @@ static volatile uint32_t   ulD3_SharedVar        = 0;
 static SemaphoreHandle_t   xDemo3Done            = NULL;
 static SemaphoreHandle_t   xD3_Phase1Done        = NULL;  /* Task A signals after 1st crit */
 static SemaphoreHandle_t   xD3_MigrateReady      = NULL;  /* Orchestrator signals Task A to continue */
+static SemaphoreHandle_t   xD3_EvictorEntered    = NULL;  /* Evictor signals it has entered critical section */
 static SemaphoreHandle_t   xD3_MigrateDone       = NULL;  /* Task A signals migration done */
 
 /* Busy-loop count for critical section work. */
@@ -460,6 +461,7 @@ static SemaphoreHandle_t   xD3_MigrateDone       = NULL;  /* Task A signals migr
 static void prvEvictorTask( void *pv )
 {
     ( void ) pv;
+    xSemaphoreGive( xD3_EvictorEntered );
     /* Wait until Task A signals it's done with migration. */
     xSemaphoreTake( xD3_MigrateDone, portMAX_DELAY ); 
     vTaskDelete( NULL );
@@ -585,8 +587,8 @@ static void prvDemo3Task( void *pv )
     configASSERT( xEvH );
     vTaskCoreAffinitySet( xEvH, ( 1U << xOrigCore ) );
 
-    /* Small delay so evictor occupies the core. */
-    vTaskDelay( pdMS_TO_TICKS( 20 ) );
+    /* Wait for evictor occupies the core. */
+    xSemaphoreTake( xD3_EvictorEntered, portMAX_DELAY );
 
     /* Signal Task A to continue - it should wake on the other core. */
     xSemaphoreGive( xD3_MigrateReady );
@@ -619,18 +621,29 @@ static void prvDemo3Task( void *pv )
 /*===========================================================================
  * DEMO 4 - FPU Task Pinned to a Specific Core
  *
- * Pins a task to core 1, performs sin^2(x) + cos^2(x) == 1 with frequent
- * yields to stress the FPU context save/restore path.  A "disturber" task
- * on core 0 also uses FPU to ensure per-core FPU state isolation.
+ * Tests FPU context correctness when a higher-priority disturber task
+ * preempts an FPU task on the SAME core.  Both tasks call vPortTaskUsesFPU()
+ * and perform floating-point operations.
+ *
+ * Test flow:
+ *   1. FPU task (lower priority) continuously computes sin^2+cos^2 == 1
+ *   2. Disturber task (higher priority, same core) periodically preempts it
+ *   3. Disturber trashes FPU registers with a distinctive pattern
+ *   4. When FPU task resumes, its FPU registers must be correctly restored
+ *      - If broken, sin^2+cos^2 will not equal 1
+ *
+ * A counter tracks how many times the disturber ran (preemptions).
  *===========================================================================*/
 #if ( DEMO4_FPU_PINNED == 1 )
 
 #define FPU_PIN_CORE        1
-#define FPU_ITERATIONS      1000
+#define FPU_ITERATIONS      100000
 #define FPU_EPSILON         ( 1.0e-6 )
 
 static volatile BaseType_t xFPUPass = pdFALSE;
 static volatile BaseType_t xFPUCore = -1;
+static volatile uint32_t   ulDisturbCount = 0;   /* times disturber ran (preemptions) */
+static volatile BaseType_t xFPUTaskRunning = pdFALSE; /* flag so disturber knows when to stop */
 static SemaphoreHandle_t   xDemo4Done = NULL;
 
 static void prvFPUTask( void *pv )
@@ -639,11 +652,13 @@ static void prvFPUTask( void *pv )
 
     vPortTaskUsesFPU();
 
-    sysprintf( "  [Demo4] FPU task on core %d (pinned to %d)\r\n",
-               ( int ) portGET_CORE_ID(), FPU_PIN_CORE );
+    sysprintf( "\r\n--- Demo 4: FPU Task Pinned to Core %d ---\r\n",
+                ( int ) portGET_CORE_ID() );
 
     BaseType_t xOK = pdTRUE;
     uint32_t i;
+
+    xFPUTaskRunning = pdTRUE;
 
     for( i = 0; i < FPU_ITERATIONS; i++ )
     {
@@ -661,42 +676,61 @@ static void prvFPUTask( void *pv )
             xOK = pdFALSE;
             break;
         }
-
-        /* Yield every 10 iterations to force FPU context switches. */
-        if( ( i % 10 ) == 0 )
-            taskYIELD();
     }
 
+    xFPUTaskRunning = pdFALSE;
     xFPUCore = ( BaseType_t ) portGET_CORE_ID();
     xFPUPass = xOK;
 
     sysprintf( "  [Demo4] FPU task done on core %d  iters=%lu  pass=%s\r\n",
                ( int ) xFPUCore, ( unsigned long ) i,
                xOK ? "yes" : "no" );
+    sysprintf( "  [Demo4] Disturber preempted FPU task %lu times\r\n",
+               ( unsigned long ) ulDisturbCount );
 
     prvPrintResult( "Demo4-A  FPU pinned sin^2+cos^2 identity", xFPUPass );
-    prvPrintResult( "Demo4-B  FPU task stayed on pinned core",
-                    ( xFPUCore == FPU_PIN_CORE ) ? pdTRUE : pdFALSE );
+    prvPrintResult( "Demo4-B  Disturber actually preempted FPU task",
+                    ( ulDisturbCount > 0 ) ? pdTRUE : pdFALSE );
+
+    sysprintf( "--- Demo 4 complete ---\r\n" );
 
     xSemaphoreGive( xDemo4Done );
     vTaskDelete( NULL );
 }
 
-/* Disturber: runs FPU on core 0 to create cross-core pressure. */
+/* Disturber: HIGHER priority than FPU task, pinned to SAME core.
+ * Immediately runs when FPU task yields, trashes FPU registers with a
+ * distinctive pattern, then yields back.  Each run = one preemption. */
 static void prvFPUDisturbTask( void *pv )
 {
     ( void ) pv;
     vPortTaskUsesFPU();
 
-    volatile double d = 0.0;
-    uint32_t i;
-    for( i = 0; i < FPU_ITERATIONS * 10; i++ )
+    while( xFPUTaskRunning == pdFALSE )
     {
-        d += sin( ( double ) i * 0.01 );
-        if( ( i % 50 ) == 0 )
-            taskYIELD();
+        /* Wait for FPU task to start. */
+        vTaskDelay( pdMS_TO_TICKS( 1 ) );
     }
-    ( void ) d;
+
+    while( xFPUTaskRunning != pdFALSE )
+    {
+        /* Write a distinctive pattern into FPU registers.  If the port
+         * fails to save/restore the FPU task's context, these values
+         * will corrupt its sin/cos computation. */
+        volatile double d = 0.0;
+        uint32_t j;
+        for( j = 0; j < 50; j++ )
+        {
+            d += 99999.0 * sin( ( double ) j * 3.14 );
+        }
+        ( void ) d;
+
+        ulDisturbCount++;
+
+        /* A small delay to allow FPU task to run. */
+        vTaskDelay( pdMS_TO_TICKS( 1 ) );
+    }
+
     vTaskDelete( NULL );
 }
 
@@ -797,8 +831,9 @@ static void prvResultCollector( void *pv )
     xSemaphoreTake( xDemo4Done, portMAX_DELAY );
 #endif
 
-    sysprintf( "\r\n+-----------------------------------------------+\r\n" );
-    sysprintf( "|  All SMP scheduling demos finished.            |\r\n" );
+    sysprintf( "\r\n" );
+    sysprintf( "+-----------------------------------------------+\r\n" );
+    sysprintf( "|  All SMP Scheduling Demos Finished.           |\r\n" );
     sysprintf( "+-----------------------------------------------+\r\n\r\n" );
 
     vTaskDelete( NULL );
@@ -815,9 +850,8 @@ void main_scheduling_demo( void )
 {
     sysprintf( "\r\n" );
     sysprintf( "+-----------------------------------------------+\r\n" );
-    sysprintf( "|  MA35D1 FreeRTOS-SMP Scheduling Verification  |\r\n" );
+    sysprintf( "|  MA35 FreeRTOS-SMP Scheduling Demos           |\r\n" );
     sysprintf( "+-----------------------------------------------+\r\n" );
-    sysprintf( "  Cores: %d\r\n\r\n", configNUMBER_OF_CORES );
 
     /* ---- Demo 1: Critical + ISR ---- */
 #if ( DEMO1_CRITICAL_AND_ISR == 1 )
@@ -845,6 +879,7 @@ void main_scheduling_demo( void )
     xDemo3Done    = xSemaphoreCreateBinary();
     xD3_Phase1Done = xSemaphoreCreateBinary();
     xD3_MigrateReady = xSemaphoreCreateBinary();
+    xD3_EvictorEntered = xSemaphoreCreateBinary();
     xD3_MigrateDone = xSemaphoreCreateBinary();
     configASSERT( xDemo3Done && xD3_Phase1Done && xD3_MigrateReady && xD3_MigrateDone );
     xTaskCreate( prvDemo3Task, "D3", DEMO_STACK_SIZE, NULL,
@@ -857,17 +892,21 @@ void main_scheduling_demo( void )
         xDemo4Done = xSemaphoreCreateBinary();
         configASSERT( xDemo4Done );
 
+        ulDisturbCount = 0;
+        xFPUTaskRunning = pdFALSE;
+
         TaskHandle_t xFPUHandle = NULL;
         xTaskCreate( prvFPUTask, "FPU", DEMO_STACK_SIZE * 2, NULL,
                      tskIDLE_PRIORITY + 4, &xFPUHandle );
         configASSERT( xFPUHandle );
         vTaskCoreAffinitySet( xFPUHandle, ( 1U << FPU_PIN_CORE ) );
 
+        /* Disturber: SAME core, HIGHER priority - guarantees preemption. */
         TaskHandle_t xDistHandle = NULL;
         xTaskCreate( prvFPUDisturbTask, "Dist", DEMO_STACK_SIZE * 2, NULL,
-                     tskIDLE_PRIORITY + 4, &xDistHandle );
+                     tskIDLE_PRIORITY + 5, &xDistHandle );
         configASSERT( xDistHandle );
-        vTaskCoreAffinitySet( xDistHandle, ( 1U << 0 ) );
+        vTaskCoreAffinitySet( xDistHandle, ( 1U << FPU_PIN_CORE ) );
     }
 #endif
 
@@ -909,11 +948,9 @@ void main_scheduling_demo( void )
 
 void main_pingpong_demo( void )
 {
-    sysprintf( "\r\n" );
     sysprintf( "+-----------------------------------------------+\r\n" );
-    sysprintf( "|  MA35D1 FreeRTOS-SMP Cross-Core Ping-Pong     |\r\n" );
+    sysprintf( "|  MA35 FreeRTOS-SMP Cross-Core Ping-Pong       |\r\n" );
     sysprintf( "+-----------------------------------------------+\r\n" );
-    sysprintf( "  Cores: %d\r\n", configNUMBER_OF_CORES );
 
     ulPingCount   = 0;
     ulPongCount   = 0;
