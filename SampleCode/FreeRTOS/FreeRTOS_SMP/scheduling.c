@@ -462,9 +462,12 @@ static void prvEvictorTask( void *pv )
 {
     ( void ) pv;
     xSemaphoreGive( xD3_EvictorEntered );
+    
     /* Wait until Task A signals it's done with migration. */
-    xSemaphoreTake( xD3_MigrateDone, portMAX_DELAY ); 
-    vTaskDelete( NULL );
+    for ( ;; )
+    {
+        vTaskDelay( pdMS_TO_TICKS( 10 ) );
+    }
 }
 
 /* Task A - the migratable task.  No printing while it might migrate. */
@@ -500,14 +503,20 @@ static void prvMigTaskA( void *pv )
     /* Wait for the orchestrator to force our migration. */
     xSemaphoreTake( xD3_MigrateReady, portMAX_DELAY );
 
+    while (portGET_CORE_ID() == xD3_TaskAFirstCore )
+    {
+        /* Wait until we are actually migrated to the other core. */
+        vTaskDelay( pdMS_TO_TICKS( 10 ) );
+    }
+    xD3_TaskASecondCore = ( BaseType_t ) portGET_CORE_ID();
+
     /* Let orchestrator know migration should be done now. */
     xSemaphoreGive( xD3_MigrateDone );
 
-    /* Phase 2: second critical section - should now be on the other core. */
-    xD3_TaskASecondCore = ( BaseType_t ) portGET_CORE_ID();
-
     sysprintf( "  [Demo3] Task A resumed on core %d, entering 2nd critical section\r\n", 
-               ( int ) xD3_TaskASecondCore );
+                ( int ) xD3_TaskASecondCore );
+
+    /* Phase 2: second critical section - should now be on the other core. */
 
     taskENTER_CRITICAL();
     {
@@ -582,8 +591,8 @@ static void prvDemo3Task( void *pv )
      * be migrated to the other core when it becomes ready again. */
     BaseType_t xOrigCore = xD3_TaskAFirstCore;
     TaskHandle_t xEvH = NULL;
-    xTaskCreate( prvEvictorTask, "Evict", DEMO_STACK_SIZE, NULL,
-                 tskIDLE_PRIORITY + 6, &xEvH );
+    xTaskCreateAffinitySet( prvEvictorTask, "Evict", DEMO_STACK_SIZE, NULL,
+                 tskIDLE_PRIORITY + 6, ( 1U << xOrigCore ), &xEvH );
     configASSERT( xEvH );
     vTaskCoreAffinitySet( xEvH, ( 1U << xOrigCore ) );
 
@@ -592,6 +601,12 @@ static void prvDemo3Task( void *pv )
 
     /* Signal Task A to continue - it should wake on the other core. */
     xSemaphoreGive( xD3_MigrateReady );
+
+    vTaskDelay( pdMS_TO_TICKS( 100 ) );
+
+    /* Wait until Task A signals it's done with migration. */
+    xSemaphoreTake( xD3_MigrateDone, portMAX_DELAY ); 
+    vTaskDelete( xEvH );
 
     /* Wait for everything to settle. */
     vTaskDelay( pdMS_TO_TICKS( 2000 ) );
