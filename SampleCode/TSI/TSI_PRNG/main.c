@@ -80,7 +80,9 @@ int32_t main(void)
 		sysprintf("| [1] PRNG re-seed by user                                      |\n");
 		sysprintf("| [2] PRNG re-seed by TRNG                                      |\n");
 		sysprintf("| [3] Generate random numbers                                   |\n");
-		sysprintf("| [4] Generate mass random numbers                              |\n");
+		sysprintf("| [4] Generate PRNG mass random numbers                         |\n");
+		sysprintf("| [5] Generate TRNG random numbers                              |\n");
+		sysprintf("| [6] Generate a random number to Key Store SRAM                |\n");
 		sysprintf("+---------------------------------------------------------------+\n");
 
 		item = sysgetchar();
@@ -125,6 +127,31 @@ int32_t main(void)
 				TSI_PRNG_Gen_Random_Mass(64, ptr_to_u32(rnd_buff));
 				for (i = 0; i < 64; i++)
 					sysprintf("0x%08x ", rnd_buff[i]);
+				sysprintf("\n\n");
+				break;
+
+			case '5':
+				ret = TSI_TRNG_Gen_Random(4, ptr_to_u32(rnd_buff));
+				if (ret == 0)
+				{
+					for (i = 0; i < 4; i++)
+						sysprintf("0x%08x ", rnd_buff[i]);
+					sysprintf("\n\n");
+				}
+				else
+					sysprintf("TSI_TRNG_Gen_Random error, ret = 0x%x\n", ret);
+				break;
+
+			case '6':
+				ret = TSI_TRNG_Gen_Random(4, ptr_to_u32(rnd_buff));
+				if (ret != 0)
+				{
+					sysprintf("TSI_TRNG_Gen_Random error, ret = 0x%x\n", ret);
+					break;
+				}
+
+				ret = TSI_PRNG_GenTo_KS_SRAM(0, 0, 0, KS_META_256, &i);
+				sysprintf("TSI_PRNG_GenTo_KS_SRAM - ret = 0x%x, keynum = %d\n", ret, i);
 				sysprintf("\n\n");
 				break;
 		}

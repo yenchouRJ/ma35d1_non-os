@@ -96,6 +96,7 @@ extern "C"
 #define CMD_EXT_SHA_START       0xFE71
 #define CMD_EXT_SHA_UPDATE      0xFE72
 #define CMD_EXT_SHA_FINISH      0xFE73
+#define CMD_EXT_PRNG_GEN_KS     0xFE81
 
 /*------------------------------------------------------------------*/
 /*  TSI command ACK status                                          */
