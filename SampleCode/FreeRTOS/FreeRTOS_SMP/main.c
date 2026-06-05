@@ -92,41 +92,6 @@ void main1( void )
     for( ;; );
 }
 
-/*-----------------------------------------------------------*/
-/* Secondary core (core 1) entry point.                      */
-/*-----------------------------------------------------------*/
-void main1( void )
-{
-    /* Install SGI0 yield handler on core 1. */
-    IRQ_SetHandler( (IRQn_ID_t)portYIELD_SGIn, vSGIYieldHandler );
-    IRQ_SetPriority( (IRQn_ID_t)portYIELD_SGIn,
-                    configMAX_API_CALL_INTERRUPT_PRIORITY << portPRIORITY_SHIFT );
-    IRQ_Enable( (IRQn_ID_t)portYIELD_SGIn );
-
-    /* Spin until the SMP scheduler is fully running. */
-    while( ( pxCurrentTCBs[ 1 ] == NULL ) ||
-            ( xTaskGetSchedulerState() == taskSCHEDULER_NOT_STARTED ) )
-    {
-        __asm volatile ( "yield" );
-    }
-
-    /* Ensure we see all writes from core 0 (pxCurrentTCBs, ready lists,
-     * xSchedulerRunning, etc.) before we proceed. */
-    __asm volatile ( "DSB SY" ::: "memory" );
-    __asm volatile ( "ISB SY" );
-
-    /* Disable interrupts before entering the scheduler.The ERET into
-     * the first task will restore SPSR_EL3 which has interrupts unmasked,
-     * so they get re-enabled atomically when the task starts running. */
-    ( void ) portDISABLE_INTERRUPTS();
-
-    /* Enter the scheduler. */
-    vPortRestoreTaskContext();
-
-    /* Should never reach here. */
-    for( ;; );
-}
-
 void UART0_Init()
 {
     /* Enable UART0 clock */
