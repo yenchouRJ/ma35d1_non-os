@@ -709,12 +709,6 @@ static void prvFPUTask( void *pv )
 
     sysprintf( "--- Demo 4 complete ---\r\n" );
 
-    prvPrintResult( "Demo4-A  FPU pinned sin^2+cos^2 identity", xFPUPass );
-    prvPrintResult( "Demo4-B  Disturber actually preempted FPU task",
-                    ( ulDisturbCount > 0 ) ? pdTRUE : pdFALSE );
-
-    sysprintf( "--- Demo 4 complete ---\r\n" );
-
     xSemaphoreGive( xDemo4Done );
     vTaskDelete( NULL );
 }
