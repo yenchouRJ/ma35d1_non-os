@@ -106,6 +106,7 @@ void vVideo_Task(void *pvParameters)
     uint32_t frame_count, last_t0;
     int handle, ret;
 
+restart:
     ret = VC8000_Init(VC8K_BUFF_BASE, VC8K_BUFF_SIZE);
     if (ret < 0)
     {
@@ -163,6 +164,8 @@ void vVideo_Task(void *pvParameters)
         {
             sysprintf("VC8000_H264_Decode_Run error: %d\n", ret);
             // break;
+            VC8000_H264_Close_Instance(handle);
+            goto restart;
         }
         else
         {
