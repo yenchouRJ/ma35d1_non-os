@@ -378,7 +378,12 @@ int usbd_vsink_bulk_rx(void *buff)
     while (HSUSBD_IS_ATTACHED() && g_hsusbd_Configured)
     {
         if (g_u8EP1OutReady)
-            return 0;
+        {
+            if (desc->status.b.bytes >= VSINK_CHUNK_SIZE)
+                return 0;
+
+            return (VSINK_CHUNK_SIZE - desc->status.b.bytes);
+        }
     }
     return -1;
 }

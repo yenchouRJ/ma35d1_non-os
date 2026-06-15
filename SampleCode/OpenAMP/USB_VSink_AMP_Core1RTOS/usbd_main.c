@@ -24,6 +24,8 @@
 
 uint8_t _rx_mem_poll[VSINK_BUFF_SIZE] __attribute__((aligned(32)));
 
+uint8_t _rx_mem_chunk_poll[VSINK_CHUNK_SIZE] __attribute__((aligned(32)));
+
 uint32_t q_head = 0, q_tail = 0;
 
 #define GET_QUEUE_DATA_COUNT()  ((q_tail - q_head + VSINK_BUFF_SIZE) % VSINK_BUFF_SIZE)
@@ -77,10 +79,13 @@ uint32_t vsink_rxq_read(uint8_t *pdest, uint32_t len)
 
 void vUSBD_MainTask(void *pvParameters)
 {
-    uint8_t *rx_buff;
+    uint8_t  *rx_buff, *rx_chunk;
     uint32_t t0;
+    int      ret, end_len;
 
-    rx_buff = nc_ptr(_rx_mem_poll);
+    rx_buff  = nc_ptr(_rx_mem_poll);
+    rx_chunk = nc_ptr(_rx_mem_chunk_poll);
+
     q_head = q_tail = 0;
 
     sysprintf("\n\nUSBD VideoSink Task\n");
@@ -114,8 +119,28 @@ void vUSBD_MainTask(void *pvParameters)
          */
         while (HSUSBD_IS_ATTACHED() && g_hsusbd_Configured)
         {
-            if (usbd_vsink_bulk_rx(&rx_buff[q_tail]) == 0)
-                q_tail = (q_tail +  VSINK_CHUNK_SIZE) % VSINK_BUFF_SIZE;
+            if (VSINK_BUFF_SIZE - q_tail >= VSINK_CHUNK_SIZE)
+            {
+                ret = usbd_vsink_bulk_rx(&rx_buff[q_tail]);
+                if (ret > 0)
+                    q_tail = (q_tail +  ret) % VSINK_BUFF_SIZE;
+            }
+            else
+            {
+                ret = usbd_vsink_bulk_rx(rx_chunk);
+                if (q_tail + ret > VSINK_BUFF_SIZE)
+                {
+                    end_len = VSINK_BUFF_SIZE - q_tail;
+                    memcpy(&rx_buff[q_tail], rx_chunk, end_len);
+                    memcpy(rx_buff, &rx_chunk[end_len], ret - end_len);
+                    q_tail = ret - end_len;
+                }
+                else
+                {
+                    memcpy(&rx_buff[q_tail], rx_chunk, ret);
+                    q_tail = (q_tail +  ret) % VSINK_BUFF_SIZE;
+                }
+            }
 
             while (GET_QUEUE_FREE_COUNT() <  VSINK_CHUNK_SIZE * 2)
             {

@@ -10,7 +10,8 @@
 
 /* Define the vendor id and product id */
 #define USBD_VID                    0x0416
-#define USBD_PID                    0x5963
+#define USBD_PID                    0x8888
+//#define USBD_PID                    0x5963
 
 /* Define EP maximum packet size */
 #define EP0_MAX_PKT_SIZE            64
@@ -34,8 +35,8 @@
 
 #define VC8K_BUFF_BASE              0x8A800000
 #define VC8K_BUFF_SIZE              0x02000000
-#define VC8K_STRM_BUFSZ             (2 * 1024 * 1024)
-#define VC8K_FRAME_MAX_SIZE         (384 * 1024)
+#define VC8K_STRM_BUFSZ             (1 * 1024 * 1024)
+#define VC8K_FRAME_MAX_SIZE         (256 * 1024)
 #define DISP_BUFF_BASE              0x8C800000
 
 extern volatile uint32_t g_tmr2_ticks;

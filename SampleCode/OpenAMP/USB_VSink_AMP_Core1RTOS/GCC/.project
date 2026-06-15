@@ -149,6 +149,56 @@
 			<type>1</type>
 			<locationURI>PARENT-1-PROJECT_LOC/video_task.c</locationURI>
 		</link>
+		<link>
+			<name>Library/VC8000Lib/_source</name>
+			<type>2</type>
+			<locationURI>virtual:/virtual</locationURI>
+		</link>
+		<link>
+			<name>Library/VC8000Lib/_source/software</name>
+			<type>2</type>
+			<locationURI>virtual:/virtual</locationURI>
+		</link>
+		<link>
+			<name>Library/VC8000Lib/_source/software/linux</name>
+			<type>2</type>
+			<locationURI>virtual:/virtual</locationURI>
+		</link>
+		<link>
+			<name>Library/VC8000Lib/_source/software/source</name>
+			<type>2</type>
+			<locationURI>virtual:/virtual</locationURI>
+		</link>
+		<link>
+			<name>Library/VC8000Lib/_source/software/linux/dwl</name>
+			<type>2</type>
+			<locationURI>virtual:/virtual</locationURI>
+		</link>
+		<link>
+			<name>Library/VC8000Lib/_source/software/linux/ldriver</name>
+			<type>2</type>
+			<locationURI>virtual:/virtual</locationURI>
+		</link>
+		<link>
+			<name>Library/VC8000Lib/_source/software/source/common</name>
+			<type>2</type>
+			<locationURI>virtual:/virtual</locationURI>
+		</link>
+		<link>
+			<name>Library/VC8000Lib/_source/software/source/h264high</name>
+			<type>2</type>
+			<locationURI>virtual:/virtual</locationURI>
+		</link>
+		<link>
+			<name>Library/VC8000Lib/_source/software/source/jpeg</name>
+			<type>2</type>
+			<locationURI>virtual:/virtual</locationURI>
+		</link>
+		<link>
+			<name>Library/VC8000Lib/_source/software/source/pp</name>
+			<type>2</type>
+			<locationURI>virtual:/virtual</locationURI>
+		</link>
 	</linkedResources>
 	<filteredResources>
 		<filter>
