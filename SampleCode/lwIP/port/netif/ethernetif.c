@@ -70,13 +70,11 @@ struct netif *_netif1;
 #define GMAC_LWIP_RX_PRIORITY   (tskIDLE_PRIORITY + 1)
 #define GMAC_LWIP_RX_STACKSIZE  (1024)
 
-#define NUM_OF_RXSKB 32
-struct sk_buff rxskbuf[NUM_OF_RXSKB]; // application buffer queue
+static struct sk_buff rxskbuf[GMAC_CNT][RECEIVE_DESC_SIZE];
 
 extern u8_t mac_addr0[6];
 extern u8_t mac_addr1[6];
-extern struct sk_buff txbuf[GMAC_CNT];
-extern struct sk_buff rxbuf[GMAC_CNT];
+extern struct sk_buff txbuf[GMAC_CNT][TRANSMIT_DESC_SIZE];
 
 static TaskHandle_t post_rx_task[GMAC_CNT] = {NULL, NULL};
 
@@ -99,6 +97,15 @@ void notify_rx_task(int intf)
     if(xTaskGetSchedulerState() != taskSCHEDULER_RUNNING)
         return;
 
+    /* Guard: ethernetif_initX() enables the IRQ inside low_level_initX()
+     * BEFORE the RX task is created via xTaskCreate().  If a GMAC interrupt
+     * fires in that narrow window, post_rx_task[intf] is still NULL.
+     * Passing NULL to vTaskNotifyGiveFromISR() would assert/crash, so
+     * silently drop the notification here; the task will drain any pending
+     * descriptors on its very first wakeup. */
+    if (post_rx_task[intf] == NULL)
+        return;
+
     vTaskNotifyGiveFromISR(post_rx_task[intf], &xHigherPriorityTaskWoken);
     /* Force context switch immediately (risky for scheduler) */
     // portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
@@ -106,14 +113,12 @@ void notify_rx_task(int intf)
 
 void GMAC0_IRQHandler(void)
 {
-    struct sk_buff *rskb = &rxskbuf[0];
-
-    GMAC_int_handler0(rskb);
+    GMAC_int_handler0();
 }
 
 void gmac0_lwip_rx(void *arg)
 {
-    struct sk_buff *rskb = &rxskbuf[0];
+    struct sk_buff *rskb = rxskbuf[GMACINTF0];
     uint32_t packetCnt;
 
     for (;;)
@@ -129,14 +134,12 @@ void gmac0_lwip_rx(void *arg)
 
 void GMAC1_IRQHandler(void)
 {
-    struct sk_buff *rskb = &rxskbuf[0];
-
-    GMAC_int_handler1(rskb);
+    GMAC_int_handler1();
 }
 
 void gmac1_lwip_rx(void *arg)
 {
-    struct sk_buff *rskb = &rxskbuf[0];
+    struct sk_buff *rskb = rxskbuf[GMACINTF1];
     uint32_t packetCnt;
 
     for (;;)
@@ -228,7 +231,7 @@ int32_t GMAC0_TransmitPkt(struct sk_buff *ptskb, uint8_t *pbuf, uint32_t len)
 
     if(ptskb == NULL)
     {
-        tskb = (struct sk_buff *)((uint64_t)&txbuf[GMACINTF0] | NON_CACHE);
+        tskb = (struct sk_buff *)((uint64_t)&txbuf[GMACINTF0][0] | NON_CACHE);
 
         tskb->len = len;
         memcpy((uint8_t *)((u64)(tskb->data)), pbuf, len);
@@ -253,7 +256,7 @@ int32_t GMAC1_TransmitPkt(struct sk_buff *ptskb, uint8_t *pbuf, uint32_t len)
 
     if(ptskb == NULL)
     {
-        tskb = (struct sk_buff *)((uint64_t)&txbuf[GMACINTF1] | NON_CACHE);
+        tskb = (struct sk_buff *)((uint64_t)&txbuf[GMACINTF1][0] | NON_CACHE);
 
         tskb->len = len;
         memcpy((uint8_t *)((u64)(tskb->data)), pbuf, len);
@@ -287,7 +290,23 @@ low_level_output0(struct netif *netif, struct pbuf *p)
     struct pbuf *q;
     u8_t *buf = NULL;
     u16_t len = 0;
-    struct sk_buff *tskb = (struct sk_buff *)((uint64_t)&txbuf[GMACINTF0] | NON_CACHE);
+
+    /* Select the TX buffer that corresponds to the next free descriptor.
+     * txbuf[GMACINTF0][tx_idx] is only used by descriptor tx_idx, so
+     * it cannot alias any buffer the DMA is currently reading. */
+    u32 tx_idx = GMACdev[GMACINTF0].TxNext;
+
+    /* If the ring is full (all TRANSMIT_DESC_SIZE descriptors are
+     * DMA-owned) descriptor tx_idx is still in use.  Writing to its buffer
+     * would corrupt the outgoing frame.  Return ERR_MEM so lwIP can retry
+     * via the TCP retransmit timer.  In normal operation (TCP window <<
+     * TRANSMIT_DESC_SIZE) this branch is never taken. */
+    if (*(volatile u32 *)&GMACdev[GMACINTF0].BusyTxDesc >= TRANSMIT_DESC_SIZE) {
+        LINK_STATS_INC(link.drop);
+        return ERR_MEM;
+    }
+
+    struct sk_buff *tskb = (struct sk_buff *)((uint64_t)&txbuf[GMACINTF0][tx_idx] | NON_CACHE);
 
 #if ETH_PAD_SIZE
     pbuf_header(p, -ETH_PAD_SIZE); /* drop the padding word */
@@ -331,7 +350,16 @@ low_level_output1(struct netif *netif, struct pbuf *p)
     struct pbuf *q;
     u8_t *buf = NULL;
     u16_t len = 0;
-    struct sk_buff *tskb = (struct sk_buff *)((uint64_t)&txbuf[GMACINTF1] | NON_CACHE);
+
+    /* Same per-descriptor buffer scheme as low_level_output0. */
+    u32 tx_idx = GMACdev[GMACINTF1].TxNext;
+
+    if (*(volatile u32 *)&GMACdev[GMACINTF1].BusyTxDesc >= TRANSMIT_DESC_SIZE) {
+        LINK_STATS_INC(link.drop);
+        return ERR_MEM;
+    }
+
+    struct sk_buff *tskb = (struct sk_buff *)((uint64_t)&txbuf[GMACINTF1][tx_idx] | NON_CACHE);
 
 #if ETH_PAD_SIZE
     pbuf_header(p, -ETH_PAD_SIZE); /* drop the padding word */
@@ -366,6 +394,7 @@ static struct pbuf *
 low_level_input(struct netif *netif, u16_t len, u8_t *buf)
 {
     struct pbuf *p, *q;
+    u16_t offset;
 
 #if ETH_PAD_SIZE
     len += ETH_PAD_SIZE; /* allow room for Ethernet padding */
@@ -380,10 +409,20 @@ low_level_input(struct netif *netif, u16_t len, u8_t *buf)
         pbuf_header(p, -ETH_PAD_SIZE); /* drop the padding word */
 #endif
 
-        len = 0;
-        /* We iterate over the pbuf chain until we have read the entire
-        * packet into the pbuf. */
-        p->payload = (u8_t*)buf;
+        /* Copy data from the DMA RX buffer into the pbuf's own memory.
+         *
+         * GMAC_get_rx_qptr() re-arms the DMA descriptor
+         * (sets rxdesc->status = DescOwnByDma) immediately after reading
+         * it.  This means the hardware can write a NEW incoming packet
+         * into the same buffer before tcpip_thread gets to process this
+         * pbuf.  A zero-copy pointer (p->payload = buf) would expose that
+         * race and corrupt TCP/IP headers.  Copy here to be safe. */
+        offset = 0;
+        for (q = p; q != NULL; q = q->next)
+        {
+            memcpy(q->payload, buf + offset, q->len);
+            offset += q->len;
+        }
 
 #if ETH_PAD_SIZE
         pbuf_header(p, ETH_PAD_SIZE); /* reclaim the padding word */
@@ -420,12 +459,12 @@ ethernetif_input0(uint32_t packetCnt)
     for(i = 0; i < packetCnt; i++) {
         /* move received packet into a new pbuf */
 #if (LWIP_USING_HW_CHECKSUM == 1)
-        p = low_level_input(_netif0, (&rxskbuf[i])->len, (&rxskbuf[i])->pData);
+        p = low_level_input(_netif0, rxskbuf[GMACINTF0][i].len, rxskbuf[GMACINTF0][i].pData);
 #else
-        p = low_level_input(_netif0, (&rxskbuf[i])->len + 4, (&rxskbuf[i])->pData);
+        p = low_level_input(_netif0, rxskbuf[GMACINTF0][i].len + 4, rxskbuf[GMACINTF0][i].pData);
 #endif
         /* no packet could be read, silently ignore this */
-        if (p == NULL) return;
+        if (p == NULL) continue;
 
         /* points to packet payload, which starts with an Ethernet header */
         ethhdr = p->payload;
@@ -477,12 +516,12 @@ ethernetif_input1(uint32_t packetCnt)
     for(i = 0; i < packetCnt; i++) {
         /* move received packet into a new pbuf */
 #if (LWIP_USING_HW_CHECKSUM == 1)
-        p = low_level_input(_netif1, (&rxskbuf[i])->len, (&rxskbuf[i])->pData);
+        p = low_level_input(_netif1, rxskbuf[GMACINTF1][i].len, rxskbuf[GMACINTF1][i].pData);
 #else
-        p = low_level_input(_netif1, (&rxskbuf[i])->len + 4, (&rxskbuf[i])->pData);
+        p = low_level_input(_netif1, rxskbuf[GMACINTF1][i].len + 4, rxskbuf[GMACINTF1][i].pData);
 #endif
         /* no packet could be read, silently ignore this */
-        if (p == NULL) return;
+        if (p == NULL) continue;
 
         /* points to packet payload, which starts with an Ethernet header */
         ethhdr = p->payload;
@@ -573,6 +612,10 @@ ethernetif_init0(struct netif *netif)
             GMAC_LWIP_RX_PRIORITY,
             &post_rx_task[GMACINTF0]);
 
+#if ( configNUMBER_OF_CORES > 1 ) && ( configUSE_CORE_AFFINITY == 1 )
+    vTaskCoreAffinitySet(post_rx_task[GMACINTF0], 0x01);
+#endif
+
     return ERR_OK;
 }
 
@@ -636,6 +679,10 @@ ethernetif_init1(struct netif *netif)
             NULL,
             GMAC_LWIP_RX_PRIORITY,
             &post_rx_task[GMACINTF1]);
+
+#if ( configNUMBER_OF_CORES > 1 ) && ( configUSE_CORE_AFFINITY == 1 )
+    vTaskCoreAffinitySet(post_rx_task[GMACINTF1], 0x01);
+#endif
 
     return ERR_OK;
 }

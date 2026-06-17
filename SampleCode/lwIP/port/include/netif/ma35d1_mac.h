@@ -35,23 +35,21 @@ s32 GMAC_setup_tx_desc_queue(GMACdevice *gmacdev, u32 no_of_desc, u32 desc_mode)
 s32 GMAC_setup_rx_desc_queue(GMACdevice *gmacdev, u32 no_of_desc, u32 desc_mode);
 s32 GMAC_set_mode(GMACdevice *gmacdev);
 s32 GMAC_open(int intf, int mode);
-s32 GMAC_register_interrupt(int intf);
 void GMAC_giveup_rx_desc_queue(GMACdevice *gmacdev, u32 desc_mode);
 void GMAC_giveup_tx_desc_queue(GMACdevice *gmacdev, u32 desc_mode);
 s32 GMAC_close(int intf);
 s32 GMAC_xmit_frames(struct sk_buff *skb, int intf, u32 offload_needed, u32 ts);
 void GMAC_handle_transmit_over(int intf);
 uint32_t GMAC_handle_received_data(int intf, struct sk_buff *prskb);
-static void GMAC_powerup_mac(GMACdevice *gmacdev);
-static void GMAC_powerdown_mac(GMACdevice *gmacdev);
-uint32_t GMAC_int_handler0(struct sk_buff *prskb);
-uint32_t GMAC_int_handler1(struct sk_buff *prskb);
+void GMAC_powerup_mac(GMACdevice *gmacdev);
+void GMAC_powerdown_mac(GMACdevice *gmacdev);
+uint32_t GMAC_int_handler0(void);
+uint32_t GMAC_int_handler1(void);
 extern void notify_rx_task(int intf);
 
 extern GMACdevice GMACdev[];
 extern u8 mac_addr0[];
 extern u8 mac_addr1[];
-extern struct sk_buff txbuf[];
-extern struct sk_buff rxbuf[];
+extern struct sk_buff txbuf[GMAC_CNT][TRANSMIT_DESC_SIZE];
 
 #endif /* __MA35D1_MAC_H__ */

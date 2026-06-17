@@ -370,6 +370,10 @@ sys_thread_new(const char *name, lwip_thread_fn thread, void *arg, int stacksize
     ret = xTaskCreate(thread, name, (configSTACK_DEPTH_TYPE)rtos_stacksize, arg, prio, &rtos_task);
     LWIP_ASSERT("task creation failed", ret == pdTRUE);
 
+#if ( configNUMBER_OF_CORES > 1 ) && ( configUSE_CORE_AFFINITY == 1 )
+    vTaskCoreAffinitySet(rtos_task, 0x01);
+#endif
+
     lwip_thread.thread_handle = rtos_task;
     return lwip_thread;
 }
