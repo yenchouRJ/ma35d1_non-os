@@ -1,24 +1,20 @@
 /**************************************************************************//**
  * @file     main.c
  *
- * @brief    A UDP echo server which is implemented with LwIP under FreeRTOS.
- *           The server listen to port 80, IP address is configured statically
- *           to 192.168.1.2. After receiving any string from its peer, this 
- *           sample code reply with "Hello World!!"
+ * @brief    FreeRTOS-SMP UDP echo server using LwIP.
+ *           Server listens on port 80, IP address 192.168.1.2.
+ *           Echoes back any received UDP datagram.
  *
- * @note     TIMER11 has been assigned to FreeRTOS kernel.
+ *           Core 0 starts the scheduler; core 1 enters via main1().
+ *           The ARMv8 Generic Timer (CNTP, PPI 30) is used for the tick.
+ *           SGI0 is used for inter-core yield signalling (IPI).
  *
- * @copyright (C) 2023 Nuvoton Technology Corp. All rights reserved.
+ * @copyright (C) 2026 Nuvoton Technology Corp. All rights reserved.
  *****************************************************************************/
 
-/* Nuvoton includes */
 #include "NuMicro.h"
-
-/* Kernel includes. */
 #include "FreeRTOS.h"
 #include "task.h"
-#include "timers.h"
-#include "semphr.h"
 
 /* lwIP includes */
 #include "lwipopts.h"
@@ -32,127 +28,47 @@
 #define UDP_TASK_PRIORITY        ( tskIDLE_PRIORITY + 3UL )
 #define UDP_THREAD_STACKSIZE     ( 400 )
 
-/* Prototypes for the standard FreeRTOS callback/hook functions implemented
-within this file. */
-void vApplicationMallocFailedHook( void );
-void vApplicationIdleHook( void );
-void vApplicationStackOverflowHook( TaskHandle_t pxTask, char *pcTaskName );
-void vApplicationTickHook( void );
+struct netif netif;
 
-void vApplicationMallocFailedHook( void )
-{
-    /* Called if a call to pvPortMalloc() fails because there is insufficient
-    free memory available in the FreeRTOS heap.  pvPortMalloc() is called
-    internally by FreeRTOS API functions that create tasks, queues, software
-    timers, and semaphores.  The size of the FreeRTOS heap is set by the
-    configTOTAL_HEAP_SIZE configuration constant in FreeRTOSConfig.h. */
-    taskDISABLE_INTERRUPTS();
-    sysprintf( "ASSERT!  MallocFailed\r\n");
-    for( ;; );
-}
+/*-----------------------------------------------------------*/
+/* External references needed for secondary core boot.       */
 /*-----------------------------------------------------------*/
 
-void vApplicationStackOverflowHook( TaskHandle_t pxTask, char *pcTaskName )
-{
-    ( void ) pcTaskName;
-    ( void ) pxTask;
+extern void * volatile pxCurrentTCBs[];
+extern void vSafePrintfInit(void);
+extern void vPortRestoreTaskContext( void );
 
-    /* Run time stack overflow checking is performed if
-    configCHECK_FOR_STACK_OVERFLOW is defined to 1 or 2.  This hook
-    function is called if a stack overflow is detected. */
-    taskDISABLE_INTERRUPTS();
-    sysprintf( "ASSERT!  StackOverflow\r\n");
-    for( ;; );
-}
-/*-----------------------------------------------------------*/
-
-void vApplicationIdleHook( void )
-{
-    volatile size_t xFreeHeapSpace;
-
-    /* This is just a trivial example of an idle hook.  It is called on each
-    cycle of the idle task.  It must *NOT* attempt to block.  In this case the
-    idle task just queries the amount of FreeRTOS heap that remains.  See the
-    memory management section on the http://www.FreeRTOS.org web site for memory
-    management options.  If there is a lot of heap memory free then the
-    configTOTAL_HEAP_SIZE value in FreeRTOSConfig.h can be reduced to free up
-    RAM. */
-    xFreeHeapSpace = xPortGetFreeHeapSize();
-
-    /* Remove compiler warning about xFreeHeapSpace being set but never used. */
-    ( void ) xFreeHeapSpace;
-}
-/*-----------------------------------------------------------*/
-
-void vApplicationTickHook( void )
-{
-#if( mainSELECTED_APPLICATION == 1 )
-    {
-        /* Only the comprehensive demo actually uses the tick hook. */
-        extern void vFullDemoTickHook( void );
-        vFullDemoTickHook();
-    }
+#if ( configNUMBER_OF_CORES > 1 )
+    extern void RunCore1( void );
 #endif
-}
+
 /*-----------------------------------------------------------*/
-
-/* configUSE_STATIC_ALLOCATION is set to 1, so the application must provide an
-implementation of vApplicationGetIdleTaskMemory() to provide the memory that is
-used by the Idle task. */
-void vApplicationGetIdleTaskMemory( StaticTask_t **ppxIdleTaskTCBBuffer, StackType_t **ppxIdleTaskStackBuffer, uint32_t *pulIdleTaskStackSize )
-{
-    /* If the buffers to be provided to the Idle task are declared inside this
-    function then they must be declared static - otherwise they will be allocated on
-    the stack and so not exists after this function exits. */
-    static StaticTask_t xIdleTaskTCB;
-    static StackType_t uxIdleTaskStack[ configMINIMAL_STACK_SIZE ];
-
-    /* Pass out a pointer to the StaticTask_t structure in which the Idle task's
-    state will be stored. */
-    *ppxIdleTaskTCBBuffer = &xIdleTaskTCB;
-
-    /* Pass out the array that will be used as the Idle task's stack. */
-    *ppxIdleTaskStackBuffer = uxIdleTaskStack;
-
-    /* Pass out the size of the array pointed to by *ppxIdleTaskStackBuffer.
-    Note that, as the array is necessarily of type StackType_t,
-    configMINIMAL_STACK_SIZE is specified in words, not bytes. */
-    *pulIdleTaskStackSize = configMINIMAL_STACK_SIZE;
-}
+/* Secondary core (core 1) entry point.                      */
 /*-----------------------------------------------------------*/
-
-/* configUSE_STATIC_ALLOCATION and configUSE_TIMERS are both set to 1, so the
-application must provide an implementation of vApplicationGetTimerTaskMemory()
-to provide the memory that is used by the Timer service task. */
-void vApplicationGetTimerTaskMemory( StaticTask_t **ppxTimerTaskTCBBuffer, StackType_t **ppxTimerTaskStackBuffer, uint32_t *pulTimerTaskStackSize )
+void main1( void )
 {
-    /* If the buffers to be provided to the Timer task are declared inside this
-    function then they must be declared static - otherwise they will be allocated on
-    the stack and so not exists after this function exits. */
-    static StaticTask_t xTimerTaskTCB;
-    static StackType_t uxTimerTaskStack[ configTIMER_TASK_STACK_DEPTH ];
+#if ( configNUMBER_OF_CORES > 1 )
+    IRQ_SetHandler( (IRQn_ID_t)portYIELD_SGIn, vSGIYieldHandler );
+    IRQ_SetPriority( (IRQn_ID_t)portYIELD_SGIn,
+                    configMAX_API_CALL_INTERRUPT_PRIORITY << portPRIORITY_SHIFT );
+    IRQ_Enable( (IRQn_ID_t)portYIELD_SGIn );
 
-    /* Pass out a pointer to the StaticTask_t structure in which the Timer
-    task's state will be stored. */
-    *ppxTimerTaskTCBBuffer = &xTimerTaskTCB;
+    while( ( pxCurrentTCBs[ 1 ] == NULL ) ||
+            ( xTaskGetSchedulerState() == taskSCHEDULER_NOT_STARTED ) )
+    {
+        __asm volatile ( "yield" );
+    }
 
-    /* Pass out the array that will be used as the Timer task's stack. */
-    *ppxTimerTaskStackBuffer = uxTimerTaskStack;
+    __asm volatile ( "DSB SY" ::: "memory" );
+    __asm volatile ( "ISB SY" );
 
-    /* Pass out the size of the array pointed to by *ppxTimerTaskStackBuffer.
-    Note that, as the array is necessarily of type StackType_t,
-    configMINIMAL_STACK_SIZE is specified in words, not bytes. */
-    *pulTimerTaskStackSize = configTIMER_TASK_STACK_DEPTH;
-}
-/*-----------------------------------------------------------*/
+    ( void ) portDISABLE_INTERRUPTS();
 
-void vMainAssertCalled( const char *pcFileName, uint32_t ulLineNumber )
-{
-    sysprintf( "ASSERT!  Line %lu of file %s\r\n", ulLineNumber, pcFileName );
-    taskENTER_CRITICAL();
+    vPortRestoreTaskContext();
+#endif /* configNUMBER_OF_CORES > 1 */
+
     for( ;; );
 }
-/*-----------------------------------------------------------*/
 
 void UART0_Init()
 {
@@ -185,16 +101,6 @@ void SYS_Init()
     CLK->PLL[EPLL].CTL1 = 2 << CLK_PLLnCTL1_OUTDIV_Pos; // EPLL divide by 2 and enable
     CLK_WaitClockReady(CLK_STATUS_STABLE_EPLL);
 
-    /* DDR Init */
-    outp32(UMCTL2_BASE + 0x6a0, 0x01);
-
-    // Enable HWSEM clock
-    CLK_EnableModuleClock(HWS_MODULE);
-
-    // Reset HWSEM
-    SYS->IPRST0 = SYS_IPRST0_HWSEMRST_Msk;
-    SYS->IPRST0 = 0;
-
     /* Lock protected registers */
     SYS_LockReg();
 }
@@ -210,8 +116,6 @@ static netif_init_fn ethernetif_init(int intf)
 
     return ethernetif_init;
 }
-
-struct netif netif;
 
 static void vUdpTask( void *pvParameters )
 {
@@ -243,17 +147,37 @@ static void vUdpTask( void *pvParameters )
     vTaskSuspend( NULL );
 }
 
-/* main function */
+/*-----------------------------------------------------------*/
+/* Primary core (core 0) entry point.                        */
+/*-----------------------------------------------------------*/
 int main(void)
 {
     SYS_Init();
 
-    global_timer_init();
+    vSafePrintfInit();
+
+    sysprintf("\nCPU @ %d Hz\n", SystemCoreClock);
+    sysprintf("FreeRTOS-SMP starting on %d cores\n", configNUMBER_OF_CORES);
+
+    IRQ_SetHandler( (IRQn_ID_t)portYIELD_SGIn, vSGIYieldHandler );
+    IRQ_SetPriority( (IRQn_ID_t)portYIELD_SGIn,
+                     configMAX_API_CALL_INTERRUPT_PRIORITY << portPRIORITY_SHIFT );
+    IRQ_Enable( (IRQn_ID_t)portYIELD_SGIn );
+
+#if ( configNUMBER_OF_CORES > 1 )
+    RunCore1();
+#endif
 
     sysprintf("\n\nCPU @ %d Hz\n", SystemCoreClock);
     sysprintf("FreeRTOS is starting ...\n");
 
-    xTaskCreate( vUdpTask, "UdpTask", UDP_THREAD_STACKSIZE, NULL, UDP_TASK_PRIORITY, NULL );
+#if ( configNUMBER_OF_CORES > 1 ) && ( configUSE_CORE_AFFINITY == 1 )
+        TaskHandle_t xUdpTaskHandle = NULL;
+        xTaskCreate( vUdpTask, "UdpTask", UDP_THREAD_STACKSIZE, NULL, UDP_TASK_PRIORITY, &xUdpTaskHandle );
+        vTaskCoreAffinitySet( xUdpTaskHandle, 0x01 );
+#else
+        xTaskCreate( vUdpTask, "UdpTask", UDP_THREAD_STACKSIZE, NULL, UDP_TASK_PRIORITY, NULL );
+#endif
 
     /* Start the tasks and timer running. */
     vTaskStartScheduler();
