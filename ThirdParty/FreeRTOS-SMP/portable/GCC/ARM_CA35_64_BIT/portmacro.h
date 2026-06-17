@@ -103,7 +103,12 @@ extern uint64_t ullPortInterruptNesting[];
  * (re-entrant from the same core).  vPortRecursiveLock() tracks per-lock
  * ownership and recursion count, matching the ARM_CR82 reference SMP port.
  *
- * Lock indices must match the eLockType_t enum in port.c. */
+ * Lock indices must match the eLockType_t enum in port.c.
+ *
+ * For single-core builds (configNUMBER_OF_CORES == 1) all four macros are
+ * no-ops. */
+#if ( configNUMBER_OF_CORES > 1 )
+
 typedef enum
 {
 	eLockISR = 0,
@@ -119,6 +124,15 @@ extern void vPortRecursiveLock( uint32_t ulCoreID,
 #define portRELEASE_ISR_LOCK( xCoreID )		vPortRecursiveLock( ( uint32_t ) ( xCoreID ), eLockISR, pdFALSE )
 #define portGET_TASK_LOCK( xCoreID )		vPortRecursiveLock( ( uint32_t ) ( xCoreID ), eLockTask, pdTRUE )
 #define portRELEASE_TASK_LOCK( xCoreID )	vPortRecursiveLock( ( uint32_t ) ( xCoreID ), eLockTask, pdFALSE )
+
+#else /* configNUMBER_OF_CORES == 1 */
+
+#define portGET_ISR_LOCK( xCoreID )			do {} while( 0 )
+#define portRELEASE_ISR_LOCK( xCoreID )		do {} while( 0 )
+#define portGET_TASK_LOCK( xCoreID )		do {} while( 0 )
+#define portRELEASE_TASK_LOCK( xCoreID )	do {} while( 0 )
+
+#endif /* configNUMBER_OF_CORES > 1 */
 
 /*-----------------------------------------------------------*/
 
@@ -197,10 +211,15 @@ extern void vTaskExitCritical( void );
 /* SMP-required ISR critical section macros (FreeRTOS v11.1+).
  * These delegate to the kernel's SMP-aware critical section management
  * which acquires the ISR spinlock and tracks nesting. */
-extern UBaseType_t vTaskEnterCriticalFromISR( void );
-extern void vTaskExitCriticalFromISR( UBaseType_t uxSavedInterruptStatus );
-#define portENTER_CRITICAL_FROM_ISR()			vTaskEnterCriticalFromISR()
-#define portEXIT_CRITICAL_FROM_ISR( x )			vTaskExitCriticalFromISR( x )
+#if ( configNUMBER_OF_CORES > 1 )
+	extern UBaseType_t vTaskEnterCriticalFromISR( void );
+	extern void vTaskExitCriticalFromISR( UBaseType_t uxSavedInterruptStatus );
+	#define portENTER_CRITICAL_FROM_ISR()		vTaskEnterCriticalFromISR()
+	#define portEXIT_CRITICAL_FROM_ISR( x )		vTaskExitCriticalFromISR( x )
+#else
+	#define portENTER_CRITICAL_FROM_ISR()		uxPortSetInterruptMask()
+	#define portEXIT_CRITICAL_FROM_ISR( x )		vPortClearInterruptMask( x )
+#endif
 
 /*-----------------------------------------------------------*/
 

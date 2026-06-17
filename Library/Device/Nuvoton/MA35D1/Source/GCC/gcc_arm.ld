@@ -64,6 +64,16 @@ SECTIONS
 	   _stack = .;
 	} > DDR_BASEADDR
 
+	/* FreeRTOS-SMP single-core compatibility.
+	 * portASM.S always references pxCurrentTCBs[].  When tasks.c is compiled
+	 * with configNUMBER_OF_CORES == 1 it exports only pxCurrentTCB (scalar).
+	 * PROVIDE creates pxCurrentTCBs as a linker alias for pxCurrentTCB ONLY
+	 * when no strong definition of pxCurrentTCBs already exists (i.e. N == 1).
+	 * For dual-core builds tasks.c supplies a strong pxCurrentTCBs[] and this
+	 * line is silently ignored.  Non-FreeRTOS projects never reference
+	 * pxCurrentTCBs, so PROVIDE never fires and there is zero impact on them. */
+	PROVIDE(pxCurrentTCBs = pxCurrentTCB);
+
 	/DISCARD/ : { *(.comment) *(.gnu*) *(.note*) *(.eh_frame*) }
 }
 __bss_size = (__bss_end - __bss_start)>>3;
