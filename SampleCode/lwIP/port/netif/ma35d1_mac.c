@@ -13,14 +13,12 @@ static DmaDesc rx_desc[GMAC_CNT][RECEIVE_DESC_SIZE] __attribute__ ((aligned (64)
 
 static struct sk_buff rx_buf[GMAC_CNT][RECEIVE_DESC_SIZE] __attribute__ ((aligned (64)));
 
-// These 2 are accessable from application
-struct sk_buff txbuf[GMAC_CNT] __attribute__ ((aligned (64))); // set align to separate cacheable and non-cacheable data to different cache line.
-struct sk_buff rxbuf[GMAC_CNT] __attribute__ ((aligned (64)));
+struct sk_buff txbuf[GMAC_CNT][TRANSMIT_DESC_SIZE] __attribute__ ((aligned (64)));
 
 u8 mac_addr0[6] = DEFAULT_MAC0_ADDRESS;
 u8 mac_addr1[6] = DEFAULT_MAC1_ADDRESS;
 
-static u32 GMAC_Power_down; // This global variable is used to indicate the ISR whether the interrupts occured in the process of powering down the mac or not
+static u32 GMAC_Power_down[GMAC_CNT];
 
 /**
  * @brief This sets up the transmit Descriptor queue in ring or chain mode.
@@ -560,7 +558,10 @@ uint32_t GMAC_handle_received_data(int intf, struct sk_buff *prskb)
                 rb->len = len;
                 rb->pData = (void *)((u64)dma_addr1 | NON_CACHE);
                 ret++;
-                rb = (struct sk_buff *)rb + 1;
+
+                if (ret >= RECEIVE_DESC_SIZE)
+                    break;
+                rb++;
 
                 gmacdev->NetStats.rx_packets++;
                 gmacdev->NetStats.rx_bytes += len;
@@ -595,7 +596,7 @@ uint32_t GMAC_handle_received_data(int intf, struct sk_buff *prskb)
  */
 void GMAC_powerup_mac(GMACdevice *gmacdev)
 {
-    GMAC_Power_down = 0;	// Let ISR know that MAC is out of power down now
+    GMAC_Power_down[gmacdev->Intf] = 0;	// Let ISR know that MAC is out of power down now
     if(GMAC_is_magic_packet_received(gmacdev))
         sysprintf("GMAC wokeup due to Magic Pkt Received\n");
     //Disable the assertion of PMT interrupt
@@ -618,7 +619,7 @@ void GMAC_powerdown_mac(GMACdevice *gmacdev)
 {
     TR("Put the GMAC to power down mode..\n");
     // Disable the Dma engines in tx path
-    GMAC_Power_down = 1;	// Let ISR know that Mac is going to be in the power down mode
+    GMAC_Power_down[gmacdev->Intf] = 1;	// Let ISR know that Mac is going to be in the power down mode
     GMAC_DMA_TX_DISABLE(gmacdev);
     plat_delay(DEFAULT_LOOP_VARIABLE);		// Allow any pending transmission to complete
     // Disable the Mac for both tx and rx
@@ -652,11 +653,10 @@ void GMAC_powerdown_mac(GMACdevice *gmacdev)
  * @return None
  * @note This function runs in interrupt context
  */
-uint32_t GMAC_int_handler0(struct sk_buff *prskb)
+uint32_t GMAC_int_handler0(void)
 {
     GMACdevice *gmacdev = &GMACdev[GMACINTF0];
     u32 interrupt, dma_status_reg, mac_status_reg;
-    u32 dma_addr;
     u32 volatile reg;
 	uint32_t ret = 0;
 
@@ -740,7 +740,7 @@ uint32_t GMAC_int_handler0(struct sk_buff *prskb)
         TR("%s::Abnormal Rx Interrupt Seen\n",__FUNCTION__);
         gmacdev->NetStats.rx_over_errors++;
 
-        if(GMAC_Power_down == 0) {	// If Mac is not in powerdown
+        if(GMAC_Power_down[GMACINTF0] == 0) {	// If Mac is not in powerdown
             GMAC_DMA_RX_PD_RESUME(gmacdev);//To handle GBPS with 12 descriptors
         }
     }
@@ -748,7 +748,7 @@ uint32_t GMAC_int_handler0(struct sk_buff *prskb)
     if(interrupt & GMACDmaRxStopped) {
         TR("%s::Receiver stopped seeing Rx interrupts\n",__FUNCTION__); //Receiver gone in to stopped state
 
-        if(GMAC_Power_down == 0) {	// If Mac is not in powerdown
+        if(GMAC_Power_down[GMACINTF0] == 0) {	// If Mac is not in powerdown
             gmacdev->NetStats.rx_over_errors++;
             GMAC_DMA_RX_ENABLE(gmacdev);
         }
@@ -763,7 +763,7 @@ uint32_t GMAC_int_handler0(struct sk_buff *prskb)
     if(interrupt & GMACDmaTxAbnormal) {
         TR("%s::Abnormal Tx Interrupt Seen\n",__FUNCTION__);
 
-        if(GMAC_Power_down == 0) {	// If Mac is not in powerdown
+        if(GMAC_Power_down[GMACINTF0] == 0) {	// If Mac is not in powerdown
             GMAC_handle_transmit_over(GMACINTF0);
         }
     }
@@ -771,7 +771,7 @@ uint32_t GMAC_int_handler0(struct sk_buff *prskb)
     if(interrupt & GMACDmaTxStopped) {
         TR("%s::Transmitter stopped sending the packets\n",__FUNCTION__);
 
-        if(GMAC_Power_down == 0) {	// If Mac is not in powerdown
+        if(GMAC_Power_down[GMACINTF0] == 0) {	// If Mac is not in powerdown
             GMAC_DMA_TX_DISABLE(gmacdev);
             GMAC_take_desc_ownership_tx(gmacdev);
 
@@ -793,11 +793,10 @@ uint32_t GMAC_int_handler0(struct sk_buff *prskb)
  * @return None
  * @note This function runs in interrupt context
  */
-uint32_t GMAC_int_handler1(struct sk_buff *prskb)
+uint32_t GMAC_int_handler1(void)
 {
     GMACdevice *gmacdev = &GMACdev[GMACINTF1];
     u32 interrupt, dma_status_reg, mac_status_reg;
-    u32 dma_addr;
     u32 volatile reg;
     uint32_t ret = 0;
 
@@ -881,7 +880,7 @@ uint32_t GMAC_int_handler1(struct sk_buff *prskb)
         TR("%s::Abnormal Rx Interrupt Seen\n",__FUNCTION__);
         gmacdev->NetStats.rx_over_errors++;
 
-        if(GMAC_Power_down == 0) {	// If Mac is not in powerdown
+        if(GMAC_Power_down[GMACINTF1] == 0) {	// If Mac is not in powerdown
             GMAC_DMA_RX_PD_RESUME(gmacdev);//To handle GBPS with 12 descriptors
         }
     }
@@ -889,7 +888,7 @@ uint32_t GMAC_int_handler1(struct sk_buff *prskb)
     if(interrupt & GMACDmaRxStopped) {
         TR("%s::Receiver stopped seeing Rx interrupts\n",__FUNCTION__); //Receiver gone in to stopped state
 
-        if(GMAC_Power_down == 0) {	// If Mac is not in powerdown
+        if(GMAC_Power_down[GMACINTF1] == 0) {	// If Mac is not in powerdown
             gmacdev->NetStats.rx_over_errors++;
             GMAC_DMA_RX_ENABLE(gmacdev);
         }
@@ -904,7 +903,7 @@ uint32_t GMAC_int_handler1(struct sk_buff *prskb)
     if(interrupt & GMACDmaTxAbnormal) {
         TR("%s::Abnormal Tx Interrupt Seen\n",__FUNCTION__);
 
-        if(GMAC_Power_down == 0) {	// If Mac is not in powerdown
+        if(GMAC_Power_down[GMACINTF1] == 0) {	// If Mac is not in powerdown
             GMAC_handle_transmit_over(GMACINTF1);
         }
     }
@@ -912,7 +911,7 @@ uint32_t GMAC_int_handler1(struct sk_buff *prskb)
     if(interrupt & GMACDmaTxStopped) {
         TR("%s::Transmitter stopped sending the packets\n",__FUNCTION__);
 
-        if(GMAC_Power_down == 0) {	// If Mac is not in powerdown
+        if(GMAC_Power_down[GMACINTF1] == 0) {	// If Mac is not in powerdown
             GMAC_DMA_TX_DISABLE(gmacdev);
             GMAC_take_desc_ownership_tx(gmacdev);
 

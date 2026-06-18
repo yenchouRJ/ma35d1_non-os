@@ -22,19 +22,20 @@
 */
 
 /**
-  * @brief Delay execution for given amount of ticks.
+  * @brief Delay execution for given number of milliseconds.
   *
-  * @param[in] ticks target tick count to delay execution to.
+  * @param[in] ticks  Delay in milliseconds.
   * @return None.
   */
 void plat_delay(uint32_t ticks) {
-    if(cpuid() == 0) {
-        uint32_t tgtTicks = msTicks0 + ticks;
-        while (msTicks0 < tgtTicks);
-    } else {
-        uint32_t tgtTicks = msTicks1 + ticks;
-        while (msTicks1 < tgtTicks);
-    }
+    uint64_t freq  = (uint64_t)raw_read_cntfrq_el0();
+    uint64_t start = EL0_GetCurrentPhysicalValue();
+    /* Guard against CNTFRQ_EL0 == 0 (before SystemInit runs).
+     * In that case treat the delay as a no-op rather than spinning forever. */
+    if (freq == 0)
+        return;
+    uint64_t end = start + (freq * (uint64_t)ticks) / 1000ULL;
+    while (EL0_GetCurrentPhysicalValue() < end);
 }
 
 /******************************************************************************
