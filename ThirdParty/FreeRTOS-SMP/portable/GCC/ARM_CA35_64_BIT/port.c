@@ -159,18 +159,10 @@ __attribute__(( used )) const uint64_t ullICCPMR = portICCPMR_PRIORITY_MASK_REGI
 
 /* SMP recursive spinlocks for task-level and ISR-level critical sections.
  *
- * The FreeRTOS SMP kernel expects the port lock functions to be RECURSIVE
- * (re-entrant from the same core).  For example, vTaskSuspendAll() acquires
- * the task lock, then xTaskResumeAll() calls taskENTER_CRITICAL() which
- * tries to acquire the task lock again on the same core.  With a plain
- * non-reentrant spinlock this would deadlock.
- *
- * We track per-lock ownership (which core holds the lock) and a recursion
- * count.  When the owning core re-acquires, we simply bump the count.
- * On release, we decrement the count and only truly unlock the spinlock
- * when the count reaches zero.
- *
- */
+ * Only needed for multi-core builds.  For single-core (configNUMBER_OF_CORES
+ * == 1) the portGET/RELEASE_TASK/ISR_LOCK macros are no-ops in portmacro.h
+ * so this entire block is excluded. */
+#if ( configNUMBER_OF_CORES > 1 )
 
 /* Lock indices are defined in portmacro.h as eLockType_t:
  *   eLockISR = 0, eLockTask = 1, eLockCount = 2 */
@@ -234,6 +226,8 @@ void vPortRecursiveLock( uint32_t ulCoreID,
 		}
 	}
 }
+
+#endif /* configNUMBER_OF_CORES > 1 */
 
 /*-----------------------------------------------------------*/
 
