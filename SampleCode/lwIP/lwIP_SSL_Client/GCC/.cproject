@@ -56,9 +56,9 @@
 									<listOptionValue builtIn="false" value="&quot;${ProjDirPath}/../../../../Library/Arch/Core_A/Include&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${ProjDirPath}/../../../../Library/StdDriver/inc&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${ProjDirPath}/../../../../Library/Device/Nuvoton/MA35D1/Include&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;${ProjDirPath}/../../../../ThirdParty/FreeRTOS-Kernel/portable/GCC/ARM_CA35_64_BIT&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;${ProjDirPath}/../../../../ThirdParty/FreeRTOS-Kernel/include&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;${ProjDirPath}/../../../../ThirdParty/FreeRTOS-Kernel/common/include&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${ProjDirPath}/../../../../ThirdParty/FreeRTOS-SMP/portable/GCC/ARM_CA35_64_BIT&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${ProjDirPath}/../../../../ThirdParty/FreeRTOS-SMP/include&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${ProjDirPath}/../../../../ThirdParty/FreeRTOS-SMP/common/include&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${ProjDirPath}/../../../../ThirdParty/lwip/src/include&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${ProjDirPath}/../../port/include&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${ProjDirPath}/../../../../ThirdParty/mbedtls-3.1.0/include&quot;"/>
@@ -74,9 +74,9 @@
 									<listOptionValue builtIn="false" value="&quot;${ProjDirPath}/../../../../Library/Arch/Core_A/Include&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${ProjDirPath}/../../../../Library/StdDriver/inc&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${ProjDirPath}/../../../../Library/Device/Nuvoton/MA35D1/Include&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;${ProjDirPath}/../../../../ThirdParty/FreeRTOS-Kernel/portable/GCC/ARM_CA35_64_BIT&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;${ProjDirPath}/../../../../ThirdParty/FreeRTOS-Kernel/include&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;${ProjDirPath}/../../../../ThirdParty/FreeRTOS-Kernel/common/include&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${ProjDirPath}/../../../../ThirdParty/FreeRTOS-SMP/portable/GCC/ARM_CA35_64_BIT&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${ProjDirPath}/../../../../ThirdParty/FreeRTOS-SMP/include&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${ProjDirPath}/../../../../ThirdParty/FreeRTOS-SMP/common/include&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${ProjDirPath}/../../../../ThirdParty/lwip/src/include&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${ProjDirPath}/../../port/include&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${ProjDirPath}/../../../../ThirdParty/mbedtls-3.1.0/include&quot;"/>
